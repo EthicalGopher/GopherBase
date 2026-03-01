@@ -1,5 +1,5 @@
-import GopherBaseClient from "./client.ts";
+import GopherBaseClient from "./client";
 function createClient(url:string,key:string) {
   return new GopherBaseClient(url,key);
 }
-module.exports = {createClient};
+export { createClient };
