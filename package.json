@@ -1,0 +1,42 @@
+{
+  "name": "gopherbase",
+  "version": "1.0.0",
+  "description": "Gopherbase is a Go-powered backend-as-a-service built on PostgreSQL, providing RESTful APIs and a lightweight TypeScript SDK.",
+  "keywords": [
+    "gopherbase",
+    "backend",
+    "baas",
+    "database",
+    "postgres",
+    "supabase-alternative",
+    "golang"
+  ],
+  "homepage": "https://github.com/EthicalGopher/GopherBase#readme",
+  "bugs": {
+    "url": "https://github.com/EthicalGopher/GopherBase/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/EthicalGopher/GopherBase.git"
+  },
+  "license": "MIT",
+  "author": "EthicalGopher",
+  "type": "module",
+  "main": "dist/index.ts",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.ts"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest",
+    "dev": "tsc --watch"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "vitest": "^1.0.0"
+  }
+}
