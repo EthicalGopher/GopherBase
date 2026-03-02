@@ -10,8 +10,12 @@ class QueryBuilder {
         this.columns = columns;
         return this;
     }
+    filter(filter) {
+        this.filters.push(filter);
+        return this;
+    }
     async execute() {
-        let query = `${this.url}/rest/v1/${this.table}?select=${this.columns}`;
+        let query = `${this.url}/rest/v1/select/${this.table}?select=${this.columns}`;
         if (this.filters.length > 0) {
             query += "&" + this.filters.join("&");
         }

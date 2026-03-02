@@ -22,10 +22,15 @@
   "license": "MIT",
   "author": "EthicalGopher",
   "type": "module",
-  "main": "dist/index.ts",
+  "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "type": "module",
   "exports": {
-    ".": "./dist/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    }
   },
   "files": [
     "dist"
