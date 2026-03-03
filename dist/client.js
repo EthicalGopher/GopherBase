@@ -19,15 +19,118 @@ class GopherBaseClient {
                 return res.json();
             },
         };
+        this.auth = {
+            signUp: async (email, password) => {
+                const res = await fetch(`${this.url}/rest/v1/auth/signup`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({ email, password }),
+                });
+                if (!res.ok) {
+                    throw new Error(await res.text());
+                }
+                const token = await res.json();
+                this.accessToken = token.access_token;
+                this.refreshToken = token.refresh_token;
+                return token;
+            },
+            signIn: async (email, password) => {
+                const res = await fetch(`${this.url}/rest/v1/auth/signin`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({ email, password }),
+                });
+                if (!res.ok) {
+                    throw new Error(await res.text());
+                }
+                const token = await res.json();
+                this.accessToken = token.access_token;
+                this.refreshToken = token.refresh_token;
+                return token;
+            },
+            signOut: async () => {
+                const res = await fetch(`${this.url}/rest/v1/auth/signout`, {
+                    method: "POST",
+                    headers: {
+                        Authorization: `Bearer ${this.accessToken}`,
+                    },
+                });
+                this.accessToken = null;
+                this.refreshToken = null;
+                if (!res.ok) {
+                    throw new Error(await res.text());
+                }
+            },
+            getUser: async () => {
+                const res = await fetch(`${this.url}/rest/v1/auth/user`, {
+                    method: "GET",
+                    headers: {
+                        Authorization: `Bearer ${this.accessToken}`,
+                    },
+                });
+                if (!res.ok) {
+                    throw new Error(await res.text());
+                }
+                return res.json();
+            },
+            refreshSession: async () => {
+                const res = await fetch(`${this.url}/rest/v1/auth/refresh`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({ refresh_token: this.refreshToken }),
+                });
+                if (!res.ok) {
+                    throw new Error(await res.text());
+                }
+                const token = await res.json();
+                this.accessToken = token.access_token;
+                this.refreshToken = token.refresh_token;
+                return token;
+            },
+            getConfig: async () => {
+                const res = await fetch(`${this.url}/rest/v1/auth/config`, {
+                    method: "GET",
+                });
+                if (!res.ok) {
+                    throw new Error(await res.text());
+                }
+                return res.json();
+            },
+            setSession: (accessToken, refreshToken) => {
+                this.accessToken = accessToken;
+                this.refreshToken = refreshToken;
+            },
+            updateConfig: async (config) => {
+                const res = await fetch(`${this.url}/rest/v1/auth/config`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify(config),
+                });
+                if (!res.ok) {
+                    throw new Error(await res.text());
+                }
+                return res.json();
+            },
+        };
         this.url = url;
         this.table = null;
         this.key = key;
+        this.accessToken = null;
+        this.refreshToken = null;
     }
     async insert(table, data) {
         const res = await fetch(`${this.url}/rest/v1/insert/${table}`, {
             method: "POST",
             headers: {
-                Authorization: `Bearer ${this.key}`,
+                Authorization: `Bearer ${this.accessToken || this.key}`,
                 "Content-Type": "application/json",
             },
             body: JSON.stringify({

@@ -6,11 +6,13 @@
     "declaration": true,
     "outDir": "./dist",
     "rootDir": ".",
-    "strict": true,
+    "strict": false,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "jsx": "react-jsx",
+    "lib": ["ES2020", "DOM"]
   },
-  "include": ["*.ts"],
+  "include": ["*.ts", "*.tsx"],
   "exclude": ["node_modules", "dist"]
 }
