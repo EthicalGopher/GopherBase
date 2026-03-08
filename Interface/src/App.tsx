@@ -24,6 +24,14 @@ interface TableColumn {
   dataType: string
   isNullable: string
   columnDefault: string | null
+  isPrimary?: boolean
+  isUnique?: boolean
+  references?: {
+    table: string
+    column: string
+    onDelete?: string
+    onUpdate?: string
+  } | null
 }
 
 interface Row {
@@ -247,9 +255,11 @@ function App() {
         name: col.name,
         type: col.dataType.toUpperCase(),
         notNull: col.isNullable === 'NO',
-        primary: col.name === 'id'
+        primary: col.isPrimary,
+        unique: col.isUnique,
+        references: (col.references && col.references.table) ? col.references : null
       }))
-      await fetch(`${API_BASE}/schema/create/${tableName}`, {
+      const res = await fetch(`${API_BASE}/schema/create/${tableName}`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -257,6 +267,13 @@ function App() {
         },
         body: JSON.stringify({ name: tableName, columns: columnsPayload })
       })
+
+      if (!res.ok) {
+        const data = await res.json()
+        setError(data.error || 'Failed to create table')
+        return
+      }
+
       setShowCreateTable(false)
       fetchTables()
     } catch {
@@ -525,6 +542,7 @@ function App() {
 
         {showCreateTable && (
           <CreateTableModal
+            existingTables={tables}
             onClose={() => setShowCreateTable(false)}
             onSubmit={handleCreateTable}
           />
@@ -542,22 +560,32 @@ function App() {
   )
 }
 
-function CreateTableModal({ onClose, onSubmit }: {
+function CreateTableModal({ existingTables, onClose, onSubmit }: {
+  existingTables: string[]
   onClose: () => void
   onSubmit: (name: string, cols: TableColumn[]) => void
 }) {
   const [tableName, setTableName] = useState('')
   const [cols, setCols] = useState<TableColumn[]>([
-    { name: 'id', dataType: 'SERIAL', isNullable: 'NO', columnDefault: null }
+    { name: 'id', dataType: 'SERIAL', isNullable: 'NO', columnDefault: null, isPrimary: true }
   ])
 
   const addColumn = () => {
-    setCols([...cols, { name: '', dataType: 'VARCHAR', isNullable: 'YES', columnDefault: null }])
+    setCols([...cols, { name: '', dataType: 'VARCHAR', isNullable: 'YES', columnDefault: null, isPrimary: false }])
   }
 
-  const updateColumn = (index: number, field: keyof TableColumn, value: string) => {
+  const updateColumn = (index: number, field: keyof TableColumn, value: any) => {
     const newCols = [...cols]
     newCols[index] = { ...newCols[index], [field]: value }
+    setCols(newCols)
+  }
+
+  const updateReference = (index: number, field: string, value: string) => {
+    const newCols = [...cols]
+    const ref = newCols[index].references || { table: existingTables[0] || '', column: 'id', onDelete: 'CASCADE', onUpdate: 'CASCADE' }
+    // @ts-ignore
+    ref[field] = value
+    newCols[index].references = ref
     setCols(newCols)
   }
 
@@ -591,38 +619,66 @@ function CreateTableModal({ onClose, onSubmit }: {
             <label>Columns</label>
             {cols.map((col, idx) => (
               <div key={idx} className="column-row">
-                <input
-                  type="text"
-                  value={col.name}
-                  onChange={e => updateColumn(idx, 'name', e.target.value)}
-                  placeholder="Column name"
-                  required
-                />
-                <select
-                  value={col.dataType}
-                  onChange={e => updateColumn(idx, 'dataType', e.target.value)}
-                >
-                  <option value="SERIAL">SERIAL</option>
-                  <option value="INTEGER">INTEGER</option>
-                  <option value="BIGINT">BIGINT</option>
-                  <option value="VARCHAR">VARCHAR</option>
-                  <option value="TEXT">TEXT</option>
-                  <option value="BOOLEAN">BOOLEAN</option>
-                  <option value="TIMESTAMP">TIMESTAMP</option>
-                  <option value="DATE">DATE</option>
-                  <option value="JSONB">JSONB</option>
-                  <option value="FLOAT">FLOAT</option>
-                  <option value="DECIMAL">DECIMAL</option>
-                </select>
-                <select
-                  value={col.isNullable}
-                  onChange={e => updateColumn(idx, 'isNullable', e.target.value)}
-                >
-                  <option value="YES">Nullable</option>
-                  <option value="NO">Not Null</option>
-                </select>
-                {idx > 0 && (
-                  <button type="button" className="btn-icon" onClick={() => removeColumn(idx)}>×</button>
+                <div className="col-inputs">
+                  <input
+                    type="text"
+                    value={col.name}
+                    onChange={e => updateColumn(idx, 'name', e.target.value)}
+                    placeholder="Column name"
+                    required
+                  />
+                  <select
+                    value={col.dataType}
+                    onChange={e => updateColumn(idx, 'dataType', e.target.value)}
+                  >
+                    <option value="SERIAL">SERIAL</option>
+                    <option value="INTEGER">INTEGER</option>
+                    <option value="BIGINT">BIGINT</option>
+                    <option value="VARCHAR">VARCHAR</option>
+                    <option value="TEXT">TEXT</option>
+                    <option value="BOOLEAN">BOOLEAN</option>
+                    <option value="TIMESTAMP">TIMESTAMP</option>
+                    <option value="DATE">DATE</option>
+                    <option value="JSONB">JSONB</option>
+                    <option value="FLOAT">FLOAT</option>
+                    <option value="DECIMAL">DECIMAL</option>
+                    <option value="UUID">UUID</option>
+                  </select>
+                  <select
+                    value={col.isNullable}
+                    onChange={e => updateColumn(idx, 'isNullable', e.target.value)}
+                  >
+                    <option value="YES">Nullable</option>
+                    <option value="NO">Not Null</option>
+                  </select>
+                  {idx > 0 && (
+                    <button type="button" className="btn-icon" onClick={() => removeColumn(idx)}>×</button>
+                  )}
+                </div>
+                <div className="col-options">
+                  <label><input type="checkbox" checked={col.isPrimary || false} onChange={e => updateColumn(idx, 'isPrimary', e.target.checked)} /> PK</label>
+                  <label><input type="checkbox" checked={col.isUnique || false} onChange={e => updateColumn(idx, 'isUnique', e.target.checked)} /> Unique</label>
+                  <label>
+                    <input 
+                      type="checkbox" 
+                      checked={!!col.references} 
+                      onChange={e => e.target.checked ? updateColumn(idx, 'references', { table: existingTables[0] || '', column: 'id', onDelete: 'CASCADE', onUpdate: 'CASCADE' }) : updateColumn(idx, 'references', null)} 
+                    /> FK
+                  </label>
+                </div>
+                {col.references && (
+                  <div className="fk-config">
+                    <select value={col.references.table} onChange={e => updateReference(idx, 'table', e.target.value)}>
+                      <option value="">Select Table</option>
+                      {existingTables.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                    <input 
+                      type="text" 
+                      value={col.references.column} 
+                      onChange={e => updateReference(idx, 'column', e.target.value)}
+                      placeholder="Ref Column (e.g. id)"
+                    />
+                  </div>
                 )}
               </div>
             ))}

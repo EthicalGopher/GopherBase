@@ -69,6 +69,11 @@ func (h *Handler) CreateTable(c fiber.Ctx) error {
 
 	columnDefs := make([]string, 0, len(body.Columns))
 	for _, col := range body.Columns {
+		if col.References != nil && (col.References.Table == "" || col.References.Column == "") {
+			return c.Status(400).JSON(fiber.Map{
+				"error": fmt.Sprintf("Foreign key reference for column '%s' is missing table or column", col.Name),
+			})
+		}
 		colDef := buildColumnDefinition(col)
 		columnDefs = append(columnDefs, colDef)
 	}
