@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: gopherbase
+      POSTGRES_PASSWORD: gopherbase
+      POSTGRES_DB: gopherbase
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+    environment:
+      DATABASE_URL: postgres://gopherbase:gopherbase@postgres:5432/gopherbase?sslmode=disable
+      JWT_SECRET: your-secret-key-change-in-production
+      AUTH_TABLE: auth
+
+volumes:
+  postgres_data:
