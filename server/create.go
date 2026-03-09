@@ -78,7 +78,7 @@ func (h *Handler) CreateTable(c fiber.Ctx) error {
 		columnDefs = append(columnDefs, colDef)
 	}
 
-	query := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (%s);", table, strings.Join(columnDefs, ", "))
+	query := fmt.Sprintf("CREATE TABLE IF NOT EXISTS \"%s\" (%s);", table, strings.Join(columnDefs, ", "))
 
 	_, err := h.DB.Exec(c.Context(), query)
 	if err != nil {
@@ -90,7 +90,7 @@ func (h *Handler) CreateTable(c fiber.Ctx) error {
 	for _, col := range body.Columns {
 		if col.Index != nil && *col.Index {
 			indexName := fmt.Sprintf("idx_%s_%s", table, col.Name)
-			indexQuery := fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s (%s);", indexName, table, col.Name)
+			indexQuery := fmt.Sprintf("CREATE INDEX IF NOT EXISTS \"%s\" ON \"%s\" (\"%s\");", indexName, table, col.Name)
 			_, err := h.DB.Exec(c.Context(), indexQuery)
 			if err != nil {
 				return c.Status(500).JSON(fiber.Map{
@@ -165,7 +165,7 @@ func buildColumnDefinition(col Column) string {
 	}
 
 	if col.References != nil {
-		def += fmt.Sprintf(" REFERENCES %s(%s)", col.References.Table, col.References.Column)
+		def += fmt.Sprintf(" REFERENCES \"%s\"(\"%s\")", col.References.Table, col.References.Column)
 		if col.References.OnDelete != "" {
 			def += fmt.Sprintf(" ON DELETE %s", strings.ToUpper(col.References.OnDelete))
 		}
