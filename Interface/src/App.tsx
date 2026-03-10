@@ -7,6 +7,7 @@ import Storage from './pages/Storage';
 import Logs from './pages/Logs';
 import Settings from './pages/Settings';
 import SQLEditor from './pages/SQLEditor';
+import APIDocs from './pages/APIDocs';
 import Login from './pages/Login';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { DatabaseProvider } from './contexts/DatabaseContext';
@@ -39,6 +40,7 @@ function AppRoutes() {
           <Route path="auth" element={<Auth />} />
           <Route path="storage" element={<Storage />} />
           <Route path="logs" element={<Logs />} />
+          <Route path="api-docs" element={<APIDocs />} />
           <Route path="settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

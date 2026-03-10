@@ -87,6 +87,9 @@ func (h *Handler) CreateTable(c fiber.Ctx) error {
 		})
 	}
 
+	username, _ := c.Locals("email").(string)
+	h.LogActivity("CREATE TABLE SUCCESS", username, table)
+
 	for _, col := range body.Columns {
 		if col.Index != nil && *col.Index {
 			indexName := fmt.Sprintf("idx_%s_%s", table, col.Name)
@@ -122,6 +125,9 @@ func (h *Handler) DropTable(c fiber.Ctx) error {
 		})
 	}
 
+	username, _ := c.Locals("email").(string)
+	h.LogActivity("DROP TABLE SUCCESS", username, table)
+
 	return c.Status(200).JSON(fiber.Map{
 		"message": "Table dropped successfully",
 	})
@@ -133,7 +139,7 @@ func buildColumnDefinition(col Column) string {
 		colType = fmt.Sprintf("%s(%d)", col.Type, *col.Length)
 	}
 
-	def := fmt.Sprintf("%s %s", col.Name, colType)
+	def := fmt.Sprintf("\"%s\" %s", col.Name, colType)
 
 	if col.NotNull != nil && *col.NotNull {
 		def += " NOT NULL"
@@ -154,7 +160,11 @@ func buildColumnDefinition(col Column) string {
 	if col.Default != nil {
 		switch v := col.Default.(type) {
 		case string:
-			def += fmt.Sprintf(" DEFAULT '%s'", strings.ReplaceAll(v, "'", "''"))
+			if strings.HasSuffix(v, "()") || strings.ToUpper(v) == "CURRENT_TIMESTAMP" || strings.ToUpper(v) == "NOW" {
+				def += fmt.Sprintf(" DEFAULT %s", v)
+			} else {
+				def += fmt.Sprintf(" DEFAULT '%s'", strings.ReplaceAll(v, "'", "''"))
+			}
 		default:
 			def += fmt.Sprintf(" DEFAULT %v", v)
 		}
@@ -238,6 +248,9 @@ func (h *Handler) Insert(c fiber.Ctx) error {
 			"error": err.Error(),
 		})
 	}
+
+	username, _ := c.Locals("email").(string)
+	h.LogActivity("INSERT SUCCESS", username, table)
 
 	return c.Status(201).JSON(fiber.Map{
 		"message": "Row inserted successfully",

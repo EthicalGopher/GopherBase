@@ -51,6 +51,9 @@ func (h *Handler) DeleteRow(c fiber.Ctx) error {
 		})
 	}
 
+	username, _ := c.Locals("email").(string)
+	h.LogActivity("DELETE SUCCESS", username, table)
+
 	return c.Status(200).JSON(fiber.Map{
 		"message": "Row deleted successfully",
 	})

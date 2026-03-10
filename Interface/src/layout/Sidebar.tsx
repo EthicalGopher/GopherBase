@@ -44,7 +44,7 @@ export default function Sidebar() {
                 <div className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">No tables yet</div>
               ) : (
                 tables
-                  .filter(t => t !== 'auth' && t !== '_gopherbase_config')
+                  .filter(t => t !== 'auth' && t !== '_gopherbase_config' && t != '_gopherbase_logs' && t != `_gopherbase_files` && t!= `_gopherbase_buckets`)
                   .map((table) => (
                     <NavLink
                       key={table}
@@ -81,6 +81,10 @@ export default function Sidebar() {
         <NavLink to="/logs" className={({ isActive }) => `flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${isActive ? 'sidebar-item-active text-primary font-semibold' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium'}`}>
           <span className={`material-symbols-outlined ${location.pathname === '/logs' ? 'fill-1' : ''}`}>history_edu</span>
           <span className="text-sm">Logs</span>
+        </NavLink>
+        <NavLink to="/api-docs" className={({ isActive }) => `flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${isActive ? 'sidebar-item-active text-primary font-semibold' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium'}`}>
+          <span className={`material-symbols-outlined ${location.pathname === '/api-docs' ? 'fill-1' : ''}`}>api</span>
+          <span className="text-sm">API Docs</span>
         </NavLink>
       </nav>
       <div className="p-4 border-t border-slate-200 dark:border-slate-800 space-y-2">

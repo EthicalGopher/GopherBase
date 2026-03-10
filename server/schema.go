@@ -1,6 +1,8 @@
 package server
 
 import (
+	"fmt"
+
 	"github.com/gofiber/fiber/v3"
 )
 
@@ -140,4 +142,55 @@ func (h *Handler) GetTableSchema(c fiber.Ctx) error {
 	}
 
 	return c.JSON(columns)
+}
+
+type AlterTableRequest struct {
+	Add    []Column `json:"add"`
+	Drop   []string `json:"drop"`
+	Rename []struct {
+		Old string `json:"old"`
+		New string `json:"new"`
+	} `json:"rename"`
+}
+
+func (h *Handler) AlterTable(c fiber.Ctx) error {
+	table := c.Params("table")
+	if table == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "Table name is required"})
+	}
+
+	var body AlterTableRequest
+	if err := c.Bind().Body(&body); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
+	}
+
+	var queries []string
+
+	// Handle drops
+	for _, colName := range body.Drop {
+		queries = append(queries, fmt.Sprintf("ALTER TABLE \"%s\" DROP COLUMN IF EXISTS \"%s\"", table, colName))
+	}
+
+	// Handle adds
+	for _, col := range body.Add {
+		colDef := buildColumnDefinition(col)
+		queries = append(queries, fmt.Sprintf("ALTER TABLE \"%s\" ADD COLUMN %s", table, colDef))
+	}
+
+	// Handle renames
+	for _, r := range body.Rename {
+		queries = append(queries, fmt.Sprintf("ALTER TABLE \"%s\" RENAME COLUMN \"%s\" TO \"%s\"", table, r.Old, r.New))
+	}
+
+	for _, query := range queries {
+		_, err := h.DB.Exec(c.Context(), query)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+	}
+
+	username, _ := c.Locals("email").(string)
+	h.LogActivity("ALTER TABLE SUCCESS", username, table)
+
+	return c.JSON(fiber.Map{"message": "Table altered successfully"})
 }

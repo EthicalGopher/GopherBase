@@ -6,6 +6,7 @@ interface TableColumn {
   type?: string;
   dataType?: string;
   isNullable?: string;
+  default?: string | null;
   columnDefault?: string | null;
   isPrimary?: boolean;
   isUnique?: boolean;
@@ -68,6 +69,7 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
       notNull: col.notNull ?? col.isNullable === 'NO',
       primary: col.primary ?? col.isPrimary,
       unique: col.unique ?? col.isUnique,
+      default: col.default ?? col.columnDefault,
       references: (col.references && col.references.table) ? col.references : null
     }));
 

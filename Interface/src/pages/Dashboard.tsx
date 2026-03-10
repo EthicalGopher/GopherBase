@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import AlertModal from '../components/AlertModal';
 import Checkbox from '../components/Checkbox';
@@ -18,6 +18,21 @@ type ColumnDef = {
   };
 };
 
+type DashboardStats = {
+  activeConnections: number;
+  storageUsageBytes: number;
+  tableCount: number;
+  apiRequests24h: number;
+};
+
+type ActivityLog = {
+  id: string;
+  event: string;
+  user: string;
+  table: string;
+  timestamp: string;
+};
+
 export default function Dashboard() {
   const { createTable, tables } = useDatabase();
   const [isCreateTableModalOpen, setIsCreateTableModalOpen] = useState(false);
@@ -26,6 +41,74 @@ export default function Dashboard() {
     { id: '1', name: 'id', type: 'uuid', isPrimaryKey: true, isNullable: false, defaultValue: 'gen_random_uuid()' }
   ]);
   const [refTableColumns, setRefTableColumns] = useState<Record<string, string[]>>({});
+
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [logs, setLogs] = useState<ActivityLog[]>([]);
+  
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 10;
+
+  useEffect(() => {
+    fetchStats();
+    fetchLogs();
+    const interval = setInterval(() => {
+      fetchStats();
+      fetchLogs();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const fetchStats = async () => {
+    try {
+      const token = localStorage.getItem('gopherbase_access_token');
+      const res = await fetch(`${API_BASE}/stats`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      setStats(data);
+    } catch (err) {
+      console.error('Failed to fetch stats', err);
+    }
+  };
+
+  const fetchLogs = async () => {
+    try {
+      const token = localStorage.getItem('gopherbase_access_token');
+      const res = await fetch(`${API_BASE}/activity`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setLogs(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch logs', err);
+    }
+  };
+
+  const totalPages = Math.max(1, Math.ceil(logs.length / pageSize));
+  const currentLogs = logs.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  const formatBytes = (bytes: number) => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const formatTime = (timestamp: string) => {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    const minutes = Math.floor(diff / 60000);
+    if (minutes < 1) return 'just now';
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    return date.toLocaleDateString();
+  };
 
   const [alertConfig, setAlertConfig] = useState<{ isOpen: boolean; title: string; message: string; type: 'success' | 'error' | 'info' | 'warning' }>({
     isOpen: false,
@@ -82,6 +165,7 @@ export default function Dashboard() {
         type: col.type,
         isPrimary: col.isPrimaryKey,
         isNullable: col.isNullable ? 'YES' : 'NO',
+        default: col.defaultValue,
         references: col.references?.table && col.references?.column ? col.references : null
       }));
       await createTable(newTableName, cols);
@@ -89,6 +173,8 @@ export default function Dashboard() {
       showAlert('Table Created', `Table ${newTableName} created successfully!`, 'success');
       setNewTableName('');
       setNewTableColumns([{ id: '1', name: 'id', type: 'uuid', isPrimaryKey: true, isNullable: false, defaultValue: 'gen_random_uuid()' }]);
+      fetchStats();
+      fetchLogs();
     } catch (err: any) {
       showAlert('Error', err.message || 'Failed to create table', 'error');
     }
@@ -99,7 +185,7 @@ export default function Dashboard() {
       {/* Page Title */}
       <div className="flex flex-col gap-1">
         <h2 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">Project Overview</h2>
-        <p className="text-slate-500 dark:text-slate-400">Health monitor and real-time database metrics for <span className="text-primary font-mono">production-v2-cluster</span></p>
+        <p className="text-slate-500 dark:text-slate-400">Health monitor and real-time database metrics for <span className="text-primary font-mono">GopherBase-cluster</span></p>
       </div>
 
       {/* Stats Grid */}
@@ -111,13 +197,13 @@ export default function Dashboard() {
           </div>
           <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">Active Connections</p>
           <div className="flex items-end gap-3">
-            <h3 className="text-3xl font-bold dark:text-white">1,284</h3>
+            <h3 className="text-3xl font-bold dark:text-white">{stats?.activeConnections || 0}</h3>
             <span className="text-green-500 text-sm font-bold flex items-center mb-1">
-              <span className="material-symbols-outlined text-sm">trending_up</span> 12.5%
+              <span className="material-symbols-outlined text-sm">trending_up</span> Live
             </span>
           </div>
           <div className="mt-4 h-1 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-            <div className="h-full bg-primary w-[75%]"></div>
+            <div className="h-full bg-primary w-[10%]"></div>
           </div>
         </div>
 
@@ -128,13 +214,10 @@ export default function Dashboard() {
           </div>
           <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">Storage Usage</p>
           <div className="flex items-end gap-3">
-            <h3 className="text-3xl font-bold dark:text-white">42.8 <span className="text-lg font-medium opacity-50">GB</span></h3>
-            <span className="text-red-500 text-sm font-bold flex items-center mb-1">
-              <span className="material-symbols-outlined text-sm">trending_up</span> 2.1%
-            </span>
+            <h3 className="text-3xl font-bold dark:text-white">{formatBytes(stats?.storageUsageBytes || 0)}</h3>
           </div>
           <div className="mt-4 h-1 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-            <div className="h-full bg-accent-purple w-[42%]"></div>
+            <div className="h-full bg-accent-purple w-[2%]"></div>
           </div>
         </div>
 
@@ -145,13 +228,10 @@ export default function Dashboard() {
           </div>
           <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">API Requests (24h)</p>
           <div className="flex items-end gap-3">
-            <h3 className="text-3xl font-bold dark:text-white">12.4M</h3>
-            <span className="text-green-500 text-sm font-bold flex items-center mb-1">
-              <span className="material-symbols-outlined text-sm">trending_up</span> 18.2%
-            </span>
+            <h3 className="text-3xl font-bold dark:text-white">{stats?.apiRequests24h || 0}</h3>
           </div>
           <div className="mt-4 h-1 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-            <div className="h-full bg-blue-400 w-[88%]"></div>
+            <div className="h-full bg-blue-400 w-[5%]"></div>
           </div>
         </div>
       </div>
@@ -165,9 +245,17 @@ export default function Dashboard() {
               <span className="material-symbols-outlined text-primary">list_alt</span>
               Recent Database Activity
             </h3>
-            <button className="text-xs font-bold text-primary hover:underline uppercase tracking-wider">Export Logs</button>
+            <button 
+              onClick={() => {
+                setCurrentPage(1);
+                fetchLogs();
+              }}
+              className="text-xs font-bold text-primary hover:underline uppercase tracking-wider"
+            >
+              Refresh
+            </button>
           </div>
-          <div className="glass-card rounded-xl overflow-hidden">
+          <div className="glass-card rounded-xl overflow-hidden flex flex-col">
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead className="bg-slate-50 dark:bg-slate-800/50">
@@ -179,66 +267,54 @@ export default function Dashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  <tr className="hover:bg-primary/5 transition-colors group">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <span className="w-2 h-2 rounded-full bg-green-500"></span>
-                        <span className="text-sm font-mono dark:text-slate-200">INSERT SUCCESS</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">api_gateway_service</td>
-                    <td className="px-6 py-4 text-sm font-medium">user_profiles</td>
-                    <td className="px-6 py-4 text-sm text-slate-500 text-right">2m ago</td>
-                  </tr>
-                  <tr className="hover:bg-primary/5 transition-colors group">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
-                        <span className="text-sm font-mono dark:text-slate-200">QUERY SLOW</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">internal_analytics</td>
-                    <td className="px-6 py-4 text-sm font-medium">transaction_logs</td>
-                    <td className="px-6 py-4 text-sm text-slate-500 text-right">14m ago</td>
-                  </tr>
-                  <tr className="hover:bg-primary/5 transition-colors group">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-                        <span className="text-sm font-mono dark:text-slate-200">INDEX CREATED</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">admin_console</td>
-                    <td className="px-6 py-4 text-sm font-medium">order_items</td>
-                    <td className="px-6 py-4 text-sm text-slate-500 text-right">32m ago</td>
-                  </tr>
-                  <tr className="hover:bg-primary/5 transition-colors group">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <span className="w-2 h-2 rounded-full bg-green-500"></span>
-                        <span className="text-sm font-mono dark:text-slate-200">UPDATE SUCCESS</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">auth_worker_01</td>
-                    <td className="px-6 py-4 text-sm font-medium">sessions</td>
-                    <td className="px-6 py-4 text-sm text-slate-500 text-right">1h ago</td>
-                  </tr>
-                  <tr className="hover:bg-primary/5 transition-colors group">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <span className="w-2 h-2 rounded-full bg-red-500"></span>
-                        <span className="text-sm font-mono dark:text-slate-200">AUTH FAILED</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">unknown_ip_42.11</td>
-                    <td className="px-6 py-4 text-sm font-medium">-</td>
-                    <td className="px-6 py-4 text-sm text-slate-500 text-right">1.2h ago</td>
-                  </tr>
+                  {currentLogs.length > 0 ? currentLogs.map((log) => (
+                    <tr key={log.id} className="hover:bg-primary/5 transition-colors group">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <span className={`w-2 h-2 rounded-full ${
+                            log.event.includes('SUCCESS') ? 'bg-green-500' : 
+                            log.event.includes('FAIL') ? 'bg-red-500' : 'bg-blue-500'
+                          }`}></span>
+                          <span className="text-sm font-mono dark:text-slate-200">{log.event}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{log.user || 'system'}</td>
+                      <td className="px-6 py-4 text-sm font-medium">{log.table || '-'}</td>
+                      <td className="px-6 py-4 text-sm text-slate-500 text-right">{formatTime(log.timestamp)}</td>
+                    </tr>
+                  )) : (
+                    <tr>
+                      <td colSpan={4} className="px-6 py-8 text-center text-slate-500 dark:text-slate-400">
+                        No activity recorded yet.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
-            <div className="p-4 bg-slate-50 dark:bg-slate-800/30 text-center">
-              <button className="text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-primary transition-colors">View all database logs</button>
+            
+            {/* Pagination Footer */}
+            <div className="p-4 bg-slate-50/50 dark:bg-slate-800/30 flex items-center justify-between border-t border-slate-100 dark:border-slate-800">
+              <div className="text-xs text-slate-500 font-medium">
+                Showing {(currentPage - 1) * pageSize + 1}-{Math.min(currentPage * pageSize, logs.length)} of {logs.length} events
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400 mr-2">Page {currentPage} of {totalPages}</span>
+                <button 
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                  className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                >
+                  <span className="material-symbols-outlined text-sm block">chevron_left</span>
+                </button>
+                <button 
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage >= totalPages}
+                  className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                >
+                  <span className="material-symbols-outlined text-sm block">chevron_right</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -247,25 +323,16 @@ export default function Dashboard() {
         <div className="space-y-6">
           {/* Performance Card */}
           <div className="glass-card rounded-xl p-6">
-            <h3 className="text-lg font-bold mb-4 dark:text-white">Query Latency</h3>
+            <h3 className="text-lg font-bold mb-4 dark:text-white">Database Stats</h3>
             <div className="space-y-4">
               <div className="flex justify-between items-center text-sm">
-                <span className="text-slate-500 dark:text-slate-400">P99 Latency</span>
-                <span className="font-mono text-primary font-bold">42ms</span>
+                <span className="text-slate-500 dark:text-slate-400">Total Tables</span>
+                <span className="font-mono text-primary font-bold">{stats?.tableCount || 0}</span>
               </div>
-              <div className="relative h-20 flex items-end gap-1 px-2">
-                <div className="flex-1 bg-primary/20 rounded-t h-[40%]"></div>
-                <div className="flex-1 bg-primary/20 rounded-t h-[60%]"></div>
-                <div className="flex-1 bg-primary/20 rounded-t h-[55%]"></div>
-                <div className="flex-1 bg-primary/40 rounded-t h-[80%]"></div>
-                <div className="flex-1 bg-primary/20 rounded-t h-[45%]"></div>
-                <div className="flex-1 bg-primary/20 rounded-t h-[30%]"></div>
-                <div className="flex-1 bg-primary/60 rounded-t h-[95%]"></div>
-                <div className="flex-1 bg-primary/30 rounded-t h-[50%]"></div>
-                <div className="flex-1 bg-primary/20 rounded-t h-[40%]"></div>
-                <div className="flex-1 bg-primary/20 rounded-t h-[65%]"></div>
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-slate-500 dark:text-slate-400">Health</span>
+                <span className="font-mono text-green-500 font-bold">Excellent</span>
               </div>
-              <p className="text-xs text-center text-slate-500 dark:text-slate-400 italic">Distribution over last 60 minutes</p>
             </div>
           </div>
 
@@ -478,7 +545,7 @@ export default function Dashboard() {
                 <button 
                   onClick={handleCreateTable}
                   disabled={!newTableName.trim() || newTableColumns.length === 0}
-                  className="px-5 py-2.5 rounded-lg font-bold bg-primary text-white hover:bg-primary/90 transition-colors shadow-lg shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-5 py-2.5 rounded-lg font-bold bg-primary text-white hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Create Table
                 </button>

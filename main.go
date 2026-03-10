@@ -27,6 +27,11 @@ func main() {
 
 	fmt.Println("Connected to PostgreSQL")
 
+	_, err = pool.Exec(context.Background(), "CREATE EXTENSION IF NOT EXISTS \"pgcrypto\";")
+	if err != nil {
+		log.Printf("Warning: Failed to create pgcrypto extension: %v\n", err)
+	}
+
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
 		jwtSecret = "your-default-secret-key-change-in-production"
@@ -46,6 +51,16 @@ func main() {
 	err = h.CreateConfigTable()
 	if err != nil {
 		log.Printf("Warning: Failed to create config table: %v\n", err)
+	}
+
+	err = h.CreateLogsTable()
+	if err != nil {
+		log.Printf("Warning: Failed to create logs table: %v\n", err)
+	}
+
+	err = h.InitStorage()
+	if err != nil {
+		log.Printf("Warning: Failed to initialize storage: %v\n", err)
 	}
 
 	err = h.LoadConfigFromDB()
@@ -81,6 +96,7 @@ func main() {
 	protected.Get("/auth/user", h.GetUser)
 
 	api1.Post("/schema/create/:table", server.AuthMiddleware, h.CreateTable)
+	api1.Post("/schema/alter/:table", server.AuthMiddleware, h.AlterTable)
 	api1.Delete("/schema/drop/:table", server.AuthMiddleware, h.DropTable)
 	api1.Get("/schema/tables", server.AuthMiddleware, h.GetTables)
 	api1.Get("/schema/:table", server.AuthMiddleware, h.GetTableSchema)
@@ -89,6 +105,19 @@ func main() {
 	api1.Delete("/delete/:table", server.AuthMiddleware, h.DeleteRow)
 
 	api1.Get("/select/:table", server.AuthMiddleware, h.Select)
+	api1.Post("/query", server.AuthMiddleware, h.RawQuery)
+
+	protected.Get("/storage/buckets", h.ListBuckets)
+	protected.Post("/storage/buckets", h.CreateBucket)
+	protected.Delete("/storage/buckets/:bucket", h.DeleteBucket)
+	protected.Get("/storage/buckets/:bucket/files", h.ListFiles)
+	protected.Post("/storage/buckets/:bucket/upload", h.UploadFile)
+	protected.Delete("/storage/buckets/:bucket/files/:file", h.DeleteFile)
+	protected.Get("/storage/buckets/:bucket/files/:file", h.DownloadFile)
+
+	protected.Get("/stats", h.GetStats)
+	protected.Get("/activity", h.GetActivityLogs)
+
 	app.Listen(":8080")
 
 }
