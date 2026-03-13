@@ -20,10 +20,21 @@ services:
       - "8080:8080"
     depends_on:
       - postgres
+      - ollama
     environment:
       DATABASE_URL: postgres://gopherbase:gopherbase@postgres:5432/gopherbase?sslmode=disable
       JWT_SECRET: your-secret-key-change-in-production
       AUTH_TABLE: auth
+      OLLAMA_HOST: http://ollama:11434
+
+  ollama:
+    image: ollama/ollama:latest
+    entrypoint: ["/bin/bash", "-c", "ollama serve & sleep 5 && ollama pull qwen2.5:32b && wait"]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
 
 volumes:
   postgres_data:
+  ollama_data:

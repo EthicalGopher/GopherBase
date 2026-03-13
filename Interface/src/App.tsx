@@ -7,6 +7,7 @@ import Storage from './pages/Storage';
 import Logs from './pages/Logs';
 import Settings from './pages/Settings';
 import SQLEditor from './pages/SQLEditor';
+import AIQuery from './pages/AIQuery';
 import APIDocs from './pages/APIDocs';
 import Login from './pages/Login';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -37,6 +38,7 @@ function AppRoutes() {
           <Route path="tables" element={<Tables />} />
           <Route path="tables/:tableName" element={<Tables />} />
           <Route path="sql-editor" element={<SQLEditor />} />
+          <Route path="ai-assistant" element={<AIQuery />} />
           <Route path="auth" element={<Auth />} />
           <Route path="storage" element={<Storage />} />
           <Route path="logs" element={<Logs />} />

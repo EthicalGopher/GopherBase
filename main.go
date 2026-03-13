@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/gofiber/contrib/v3/websocket"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/cors"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -82,6 +83,9 @@ func main() {
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 	}))
 
+	// Top-level WebSocket route
+	app.Get("/ws", websocket.New(h.AIWebSocket))
+
 	api := app.Group("/rest")
 	api1 := api.Group("/v1")
 
@@ -106,6 +110,7 @@ func main() {
 
 	api1.Get("/select/:table", server.AuthMiddleware, h.Select)
 	api1.Post("/query", server.AuthMiddleware, h.RawQuery)
+	api1.Post("/ai/query", server.AuthMiddleware, h.AIQuery)
 
 	protected.Get("/storage/buckets", h.ListBuckets)
 	protected.Post("/storage/buckets", h.CreateBucket)
@@ -118,6 +123,6 @@ func main() {
 	protected.Get("/stats", h.GetStats)
 	protected.Get("/activity", h.GetActivityLogs)
 
-	app.Listen(":8080")
+	log.Fatal(app.Listen(":8080"))
 
 }

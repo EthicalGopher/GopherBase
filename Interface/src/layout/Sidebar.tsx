@@ -70,6 +70,10 @@ export default function Sidebar() {
           <span className={`material-symbols-outlined ${location.pathname === '/sql-editor' ? 'fill-1' : ''}`}>terminal</span>
           <span className="text-sm">SQL Editor</span>
         </NavLink>
+        <NavLink to="/ai-assistant" className={({ isActive }) => `flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${isActive ? 'sidebar-item-active text-primary font-semibold' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium'}`}>
+          <span className={`material-symbols-outlined ${location.pathname === '/ai-assistant' ? 'fill-1' : ''}`}>smart_toy</span>
+          <span className="text-sm">AI Assistant</span>
+        </NavLink>
         <NavLink to="/auth" className={({ isActive }) => `flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${isActive ? 'sidebar-item-active text-primary font-semibold' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium'}`}>
           <span className={`material-symbols-outlined ${location.pathname === '/auth' ? 'fill-1' : ''}`}>shield_person</span>
           <span className="text-sm">Auth</span>
