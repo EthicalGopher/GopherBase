@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react';
-import { API_BASE } from '../contexts/AuthContext';
 
 interface Message {
   role: 'user' | 'assistant';

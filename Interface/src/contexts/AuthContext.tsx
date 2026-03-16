@@ -2,6 +2,9 @@ import { createContext, useContext, useState, useEffect, ReactNode } from 'react
 
 export const API_BASE = 'http://localhost:8080/rest/v1';
 
+const ADMIN_EMAIL = (import.meta as any).env.VITE_ADMIN_EMAIL || 'admin@example.com';
+const ADMIN_PASSWORD = (import.meta as any).env.VITE_ADMIN_PASSWORD || 'password';
+
 export interface User {
   id: string;
   email: string;
@@ -30,102 +33,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const checkAuth = async () => {
-    const token = localStorage.getItem('gopherbase_access_token');
-    if (token) {
-      try {
-        const res = await fetch(`${API_BASE}/auth/user`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (res.ok) {
-          const userData = await res.json();
-          setUser(userData as User);
-        } else {
-          const refreshToken = localStorage.getItem('gopherbase_refresh_token');
-          if (refreshToken) {
-            const refreshRes = await fetch(`${API_BASE}/auth/refresh`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ refresh_token: refreshToken })
-            });
-            if (refreshRes.ok) {
-              const data = await refreshRes.json();
-              localStorage.setItem('gopherbase_access_token', data.access_token);
-              localStorage.setItem('gopherbase_refresh_token', data.refresh_token);
-              const userRes = await fetch(`${API_BASE}/auth/user`, {
-                headers: { 'Authorization': `Bearer ${data.access_token}` }
-              });
-              if (userRes.ok) {
-                const userData = await userRes.json();
-                setUser(userData as User);
-              }
-            } else {
-              localStorage.removeItem('gopherbase_access_token');
-              localStorage.removeItem('gopherbase_refresh_token');
-            }
-          }
-        }
-      } catch {
-        localStorage.removeItem('gopherbase_access_token');
-        localStorage.removeItem('gopherbase_refresh_token');
-      }
+    const isAdmin = localStorage.getItem('gopherbase_is_admin');
+    if (isAdmin === 'true') {
+      setUser({ id: 'admin', email: ADMIN_EMAIL });
     }
     setLoading(false);
   };
 
   const signIn = async (email: string, password: string) => {
     setError(null);
-    try {
-      const res = await fetch(`${API_BASE}/auth/signin`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || 'Sign in failed');
-        throw new Error(data.error || 'Sign in failed');
-      }
-      localStorage.setItem('gopherbase_access_token', data.access_token);
-      localStorage.setItem('gopherbase_refresh_token', data.refresh_token);
-      setUser(data.user as User);
-    } catch (err: any) {
-      setError(err.message || 'Sign in failed');
-      throw err;
+    if (email === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
+      localStorage.setItem('gopherbase_is_admin', 'true');
+      setUser({ id: 'admin', email: ADMIN_EMAIL });
+    } else {
+      setError('Invalid email or password');
+      throw new Error('Invalid email or password');
     }
   };
 
   const signUp = async (email: string, password: string) => {
     setError(null);
-    try {
-      const res = await fetch(`${API_BASE}/auth/signup`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || 'Sign up failed');
-        throw new Error(data.error || 'Sign up failed');
-      }
-      localStorage.setItem('gopherbase_access_token', data.access_token);
-      localStorage.setItem('gopherbase_refresh_token', data.refresh_token);
-      setUser(data.user as User);
-    } catch (err: any) {
-      setError(err.message || 'Sign up failed');
-      throw err;
+    if (email === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
+      await signIn(email, password);
+    } else {
+      setError('Registration is disabled. Please use admin credentials.');
+      throw new Error('Registration is disabled');
     }
   };
 
   const signOut = () => {
-    const token = localStorage.getItem('gopherbase_access_token');
-    if (token) {
-      fetch(`${API_BASE}/auth/signout`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
-      }).catch(() => {});
-    }
-    localStorage.removeItem('gopherbase_access_token');
-    localStorage.removeItem('gopherbase_refresh_token');
+    localStorage.removeItem('gopherbase_is_admin');
     setUser(null);
   };
 

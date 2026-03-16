@@ -18,7 +18,6 @@ export default function Tables() {
   
   const [selectedRow, setSelectedRow] = useState<any>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [isDropModalOpen, setIsDropModalOpen] = useState(false);
   const [isInsertModalOpen, setIsInsertModalOpen] = useState(false);
   const [isEditColumnsModalOpen, setIsEditColumnsModalOpen] = useState(false);
   
@@ -171,18 +170,6 @@ export default function Tables() {
       fetchTableData();
     } catch (err) {
       showAlert('Error', 'Failed to delete some rows', 'error');
-    }
-  };
-
-  const handleConfirmDrop = async () => {
-    if (!tableName) return;
-    try {
-      await dropTable(tableName);
-      showAlert('Table Dropped', `Table ${tableName} dropped successfully!`, 'success');
-      setIsDropModalOpen(false);
-      navigate('/');
-    } catch (err: any) {
-      showAlert('Error', err.message || 'Failed to drop table', 'error');
     }
   };
 
@@ -613,7 +600,17 @@ export default function Tables() {
 
                   <div className="p-6">
                     <button 
-                      onClick={() => setIsDropModalOpen(true)}
+                      onClick={async () => {
+                        if (window.confirm(`Are you sure you want to drop table ${tableName}?`)) {
+                          try {
+                            await dropTable(tableName!);
+                            showAlert('Table Dropped', `Table ${tableName} dropped successfully!`, 'success');
+                            navigate('/');
+                          } catch (err: any) {
+                            showAlert('Error', err.message || 'Failed to drop table', 'error');
+                          }
+                        }
+                      }}
                       className="w-full py-2.5 rounded-lg border border-red-500/30 text-red-500 hover:bg-red-500/10 text-xs font-bold transition-all"
                     >
                       Drop Table: {tableName}

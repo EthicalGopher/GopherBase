@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"embed"
 	"fmt"
 	"gopherbase/server"
 	"log"
@@ -11,28 +12,15 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/cors"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/wailsapp/wails/v2"
+	"github.com/wailsapp/wails/v2/pkg/options"
+	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 )
 
-func main() {
-	connStr := os.Getenv("DATABASE_URL")
-	if connStr == "" {
-		connStr = "postgres://gopherbase:gopherbase@localhost:5432/gopherbase?sslmode=disable"
-	}
-	pool, err := pgxpool.New(context.Background(), connStr)
-	if err != nil {
-		log.Fatalf("Unable to connect to database: %v\n", err)
-	}
-	defer pool.Close()
+//go:embed all:Interface/dist
+var assets embed.FS
 
-	h := server.NewHandler(pool)
-
-	fmt.Println("Connected to PostgreSQL")
-
-	_, err = pool.Exec(context.Background(), "CREATE EXTENSION IF NOT EXISTS \"pgcrypto\";")
-	if err != nil {
-		log.Printf("Warning: Failed to create pgcrypto extension: %v\n", err)
-	}
-
+func startFiber(h *server.Handler) {
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
 		jwtSecret = "your-default-secret-key-change-in-production"
@@ -44,7 +32,7 @@ func main() {
 
 	server.InitAuth(jwtSecret, authTable)
 
-	err = h.CreateAuthTable()
+	err := h.CreateAuthTable()
 	if err != nil {
 		log.Printf("Warning: Failed to create auth table: %v\n", err)
 	}
@@ -77,6 +65,7 @@ func main() {
 			"http://127.0.0.1:3000",
 			"http://127.0.0.1:5173",
 			"http://127.0.0.1:5174",
+			"wails://wails.localhost",
 		},
 		AllowCredentials: true,
 		AllowHeaders:     []string{"Content-Type", "Authorization"},
@@ -123,6 +112,52 @@ func main() {
 	protected.Get("/stats", h.GetStats)
 	protected.Get("/activity", h.GetActivityLogs)
 
+	log.Printf("Starting Fiber server on :8080")
 	log.Fatal(app.Listen(":8080"))
+}
 
+func main() {
+	connStr := os.Getenv("DATABASE_URL")
+	if connStr == "" {
+		connStr = "postgres://gopherbase:gopherbase@localhost:5432/gopherbase?sslmode=disable"
+	}
+	pool, err := pgxpool.New(context.Background(), connStr)
+	if err != nil {
+		log.Fatalf("Unable to connect to database: %v\n", err)
+	}
+	defer pool.Close()
+
+	h := server.NewHandler(pool)
+
+	fmt.Println("Connected to PostgreSQL")
+
+	_, err = pool.Exec(context.Background(), "CREATE EXTENSION IF NOT EXISTS \"pgcrypto\";")
+	if err != nil {
+		log.Printf("Warning: Failed to create pgcrypto extension: %v\n", err)
+	}
+
+	// Start Fiber server in a goroutine
+	go startFiber(h)
+
+	// Create application with options
+	app := NewApp(h)
+
+	// Create Wails application
+	err = wails.Run(&options.App{
+		Title:  "GopherBase",
+		Width:  1024,
+		Height: 768,
+		AssetServer: &assetserver.Options{
+			Assets: assets,
+		},
+		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
+		OnStartup:        app.startup,
+		Bind: []interface{}{
+			app,
+		},
+	})
+
+	if err != nil {
+		println("Error:", err.Error())
+	}
 }

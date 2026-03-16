@@ -96,7 +96,7 @@ func (h *Handler) runDeciderAgent(ctx context.Context, prompt string, ollamaHost
 	}
 
 	reqBody := OllamaChatRequest{
-		Model:    "qwen2.5:32b",
+		Model:    "deepseek-coder:6.7b",
 		Messages: messages,
 		Stream:   false,
 	}
@@ -225,7 +225,7 @@ func (h *Handler) runCommandAgent(ctx context.Context, prompt string, ollamaHost
 
 	for i := 0; i < maxIterations; i++ {
 		reqBody := OllamaChatRequest{
-			Model:    "qwen2.5:32b",
+			Model:    "deepseek-coder:6.7b",
 			Messages: messages,
 			Tools:    tools,
 			Stream:   false,
