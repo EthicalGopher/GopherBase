@@ -1,6 +1,27 @@
 version: '3.8'
 
 services:
+  app:
+    build:
+      context: .
+      args:
+        - VITE_ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
+        - VITE_ADMIN_PASSWORD=${ADMIN_PASSWORD:-password}
+    ports:
+      - "8080:8080"
+    environment:
+      - DATABASE_URL=postgres://gopherbase:gopherbase@postgres:5432/gopherbase?sslmode=disable
+      - JWT_SECRET=${JWT_SECRET:-dev-secret}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-password}
+      - OLLAMA_HOST=http://ollama:11434
+    depends_on:
+      - postgres
+      - ollama
+    restart: unless-stopped
+    networks:
+      - gopherbase-network
+
   postgres:
     image: postgres:16-alpine
     environment:
@@ -11,15 +32,31 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - gopherbase-network
 
   ollama:
     image: ollama/ollama:latest
-    entrypoint: ["/bin/bash", "-c", "ollama serve & sleep 5 && ollama pull deepseek-coder:6.7b && wait"]
+    entrypoint: >
+      /bin/bash -c "
+      ollama serve &
+      until ollama list; do sleep 2; done &&
+      ollama pull deepseek-coder:6.7b &&
+      wait
+      "
     ports:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
+    restart: unless-stopped
+    networks:
+      - gopherbase-network
 
 volumes:
   postgres_data:
   ollama_data:
+
+networks:
+  gopherbase-network:
+    driver: bridge

@@ -87,8 +87,12 @@ func (h *Handler) runDeciderAgent(ctx context.Context, prompt string, ollamaHost
 		"4. If the prompt does both (e.g., 'Hello, show me the users') -> 'both'.\n" +
 		"EXAMPLES:\n" +
 		"User: 'Hi'\nAgent: 'chat'\n" +
+		"User: 'What is GopherBase?'\nAgent: 'chat'\n" +
 		"User: 'Select all users'\nAgent: 'command'\n" +
-		"User: 'Explain GopherBase and list tables'\nAgent: 'both'"
+		"User: 'Create a table called products with name and price'\nAgent: 'command'\n" +
+		"User: 'List all tables'\nAgent: 'command'\n" +
+		"User: 'Hello, can you show me the last 5 logs?'\nAgent: 'both'\n" +
+		"User: 'Explain how to use GopherBase and then delete the users table'\nAgent: 'both'"
 
 	messages := []OllamaMessage{
 		{Role: "system", Content: systemPrompt},
@@ -125,12 +129,14 @@ func (h *Handler) runChatAgent(ctx context.Context, prompt string, ollamaHost st
 	systemPrompt := "You are a friendly GopherBase Chat Assistant.\n" +
 		"EXAMPLES:\n" +
 		"User: 'What is GopherBase?'\n" +
-		"Agent: 'GopherBase is an open-source Supabase alternative built in Go.'\n" +
+		"Agent: 'GopherBase is an open-source Supabase alternative built in Go. It provides RESTful APIs, a lightweight TypeScript SDK, and an integrated interface for managing your PostgreSQL database.'\n" +
+		"User: 'How do I install the SDK?'\n" +
+		"Agent: 'You can install the GopherBase SDK using npm: `npm install gopherbase`. After that, you can initialize the client using the `createClient` function.'\n" +
 		"User: 'Hello!'\n" +
-		"Agent: 'Hi there! How can I help you with GopherBase today?'\n\n" +
-		"Focus on general conversation and guidance. " +
-		"STRICT RULE: DO NOT provide any code (Go, SQL, Javascript, etc.) or specific database commands. " +
-		"If the user asks for code or queries, politely explain that you are for general help and they should use the Command mode for database tasks."
+		"Agent: 'Hi there! I am your GopherBase assistant. How can I help you today?'\n\n" +
+		"Focus on general conversation, guidance, and explaining concepts. " +
+		"STRICT RULE: DO NOT provide specific SQL queries or execute database commands. " +
+		"If the user asks for database operations, politely explain that you are for general help and they should use the Command mode for database tasks."
 
 	messages := []OllamaMessage{
 		{Role: "system", Content: systemPrompt},
@@ -138,7 +144,7 @@ func (h *Handler) runChatAgent(ctx context.Context, prompt string, ollamaHost st
 	}
 
 	reqBody := OllamaChatRequest{
-		Model:    "qwen2.5:32b",
+		Model:    "deepseek-coder:6.7b",
 		Messages: messages,
 		Stream:   false,
 	}
@@ -165,7 +171,7 @@ func (h *Handler) runCommandAgent(ctx context.Context, prompt string, ollamaHost
 			Type: "function",
 			Function: OllamaFunctionDesc{
 				Name:        "execute_sql",
-				Description: "Execute a PostgreSQL query and return the results. Use this for SELECT, INSERT, UPDATE, DELETE or even DDL like CREATE TABLE.",
+				Description: "Execute a PostgreSQL query. Use for SELECT, INSERT, UPDATE, DELETE, CREATE, etc.",
 				Parameters: OllamaParameterSchema{
 					Type: "object",
 					Properties: map[string]OllamaProperty{
@@ -182,45 +188,38 @@ func (h *Handler) runCommandAgent(ctx context.Context, prompt string, ollamaHost
 			Type: "function",
 			Function: OllamaFunctionDesc{
 				Name:        "list_tables",
-				Description: "List all user-defined tables in the public schema of the database.",
+				Description: "List all public tables.",
 				Parameters: OllamaParameterSchema{
 					Type:       "object",
 					Properties: map[string]OllamaProperty{},
 				},
 			},
 		},
-		{
-			Type: "function",
-			Function: OllamaFunctionDesc{
-				Name:        "describe_table",
-				Description: "Get detailed information about a table's columns, types, and constraints.",
-				Parameters: OllamaParameterSchema{
-					Type: "object",
-					Properties: map[string]OllamaProperty{
-						"table_name": {
-							Type:        "string",
-							Description: "The name of the table to describe",
-						},
-					},
-					Required: []string{"table_name"},
-				},
-			},
-		},
 	}
 
 	systemPrompt := "You are a PostgreSQL Command Agent for GopherBase. " +
-		"Your ONLY job is to execute SQL commands using tools. " +
-		"DO NOT TALK. DO NOT EXPLAIN. ONLY CALL TOOLS.\n" +
-		"If you need information about the schema, call list_tables or describe_table.\n" +
-		"If you have enough information, call execute_sql.\n" +
-		"STRICT RULE: NO CONVERSATIONAL TEXT. ONLY TOOL CALLS."
+		"Your ONLY job is to execute SQL commands using tools.\n" +
+		"RULES:\n" +
+		"1. DO NOT TALK. DO NOT EXPLAIN.\n" +
+		"2. ONLY CALL TOOLS OR OUTPUT JSON.\n" +
+		"3. If tool calling is unavailable, output JSON: {\"name\": \"execute_sql\", \"arguments\": {\"sql\": \"...\"}}.\n" +
+		"4. If you need to know which tables exist, call list_tables first.\n" +
+		"EXAMPLES:\n" +
+		"User: 'Show me all users'\n" +
+		"Agent: {\"name\": \"execute_sql\", \"arguments\": {\"sql\": \"SELECT * FROM users;\"}}\n" +
+		"User: 'Create a table for posts'\n" +
+		"Agent: {\"name\": \"execute_sql\", \"arguments\": {\"sql\": \"CREATE TABLE posts (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), title TEXT, content TEXT, created_at TIMESTAMP DEFAULT NOW());\"}}\n" +
+		"User: 'What tables are there?'\n" +
+		"Agent: {\"name\": \"list_tables\", \"arguments\": {}}\n" +
+		"User: 'Delete the table named old_data'\n" +
+		"Agent: {\"name\": \"execute_sql\", \"arguments\": {\"sql\": \"DROP TABLE old_data;\"}}"
 
 	messages := []OllamaMessage{
 		{Role: "system", Content: systemPrompt},
 		{Role: "user", Content: prompt},
 	}
 
-	maxIterations := 5
+	maxIterations := 3
 	var toolExecutions []interface{}
 
 	for i := 0; i < maxIterations; i++ {
@@ -234,28 +233,20 @@ func (h *Handler) runCommandAgent(ctx context.Context, prompt string, ollamaHost
 		jsonData, _ := json.Marshal(reqBody)
 		resp, err := http.Post(ollamaHost+"/api/chat", "application/json", bytes.NewBuffer(jsonData))
 		if err != nil {
-			return AIResponse{Agent: "command", Text: "Error: " + err.Error()}
+			return AIResponse{Agent: "command", Text: "Connection Error: " + err.Error()}
 		}
 		defer resp.Body.Close()
 
 		var ollamaResp OllamaChatResponse
-		json.NewDecoder(resp.Body).Decode(&ollamaResp)
+		if err := json.NewDecoder(resp.Body).Decode(&ollamaResp); err != nil {
+			return AIResponse{Agent: "command", Text: "Decode Error: " + err.Error()}
+		}
 
-		// Ensure we don't output text in command mode
+		// Try to extract tool call if native ToolCalls is empty
 		if len(ollamaResp.Message.ToolCalls) == 0 && ollamaResp.Message.Content != "" {
-			// If it returned text instead of tools, try to extract if it looks like SQL
-			if strings.Contains(strings.ToUpper(ollamaResp.Message.Content), "SELECT") ||
-				strings.Contains(strings.ToUpper(ollamaResp.Message.Content), "CREATE") ||
-				strings.Contains(strings.ToUpper(ollamaResp.Message.Content), "INSERT") {
-				// Try to wrap it in a tool call if it's just raw SQL text
-				ollamaResp.Message.ToolCalls = []ToolCall{
-					{
-						Function: FunctionCall{
-							Name:      "execute_sql",
-							Arguments: json.RawMessage(fmt.Sprintf(`{"sql": %q}`, ollamaResp.Message.Content)),
-						},
-					},
-				}
+			extracted := h.tryExtractToolCall(ollamaResp.Message.Content)
+			if extracted != nil {
+				ollamaResp.Message.ToolCalls = []ToolCall{*extracted}
 			}
 		}
 
@@ -264,7 +255,7 @@ func (h *Handler) runCommandAgent(ctx context.Context, prompt string, ollamaHost
 		if len(ollamaResp.Message.ToolCalls) == 0 {
 			return AIResponse{
 				Agent:    "command",
-				Text:     "", // Force empty text for command agent
+				Text:     ollamaResp.Message.Content,
 				Response: toolExecutions,
 			}
 		}
@@ -279,48 +270,35 @@ func (h *Handler) runCommandAgent(ctx context.Context, prompt string, ollamaHost
 					SQL string `json:"sql"`
 				}
 				json.Unmarshal(tc.Function.Arguments, &args)
+				if args.SQL == "" {
+					var raw map[string]interface{}
+					json.Unmarshal(tc.Function.Arguments, &raw)
+					if s, ok := raw["sql"].(string); ok {
+						args.SQL = s
+					}
+				}
+				
 				if args.SQL != "" {
 					result, toolError = h.executeRawSQL(ctx, args.SQL)
-					toolExecutions = append(toolExecutions, fiber.Map{"tool": "execute_sql", "query": args.SQL, "result": result, "error": func() string {
-						if toolError != nil {
-							return toolError.Error()
-						}
-						return ""
-					}()})
+					toolExecutions = append(toolExecutions, fiber.Map{
+						"tool": "execute_sql", 
+						"query": args.SQL, 
+						"result": result, 
+						"error": func() string { if toolError != nil { return toolError.Error() }; return "" }(),
+					})
 				}
 			case "list_tables":
 				result, toolError = h.listTablesInternal(ctx)
-				toolExecutions = append(toolExecutions, fiber.Map{"tool": "list_tables", "result": result, "error": func() string {
-					if toolError != nil {
-						return toolError.Error()
-					}
-					return ""
-				}()})
-			case "describe_table":
-				var args struct {
-					TableName string `json:"table_name"`
-				}
-				json.Unmarshal(tc.Function.Arguments, &args)
-				result, toolError = h.describeTableInternal(ctx, args.TableName)
-				toolExecutions = append(toolExecutions, fiber.Map{"tool": "describe_table", "table": args.TableName, "result": result, "error": func() string {
-					if toolError != nil {
-						return toolError.Error()
-					}
-					return ""
-				}()})
+				toolExecutions = append(toolExecutions, fiber.Map{
+					"tool": "list_tables", 
+					"result": result,
+				})
 			}
 
-			resultStr := ""
-			if toolError != nil {
-				resultStr = fmt.Sprintf("Error: %v", toolError)
-			} else {
-				resBytes, _ := json.Marshal(result)
-				resultStr = string(resBytes)
-			}
-
+			resBytes, _ := json.Marshal(result)
 			messages = append(messages, OllamaMessage{
 				Role:       "tool",
-				Content:    resultStr,
+				Content:    string(resBytes),
 				ToolCallID: tc.ID,
 			})
 		}
@@ -423,42 +401,52 @@ func (h *Handler) AIQuery(c fiber.Ctx) error {
 }
 
 func (h *Handler) tryExtractToolCall(content string) *ToolCall {
-	// Simple regex to find JSON-like blobs
-	re := regexp.MustCompile(`\{.*"name".*"execute_sql".*\}`)
-	match := re.FindString(content)
-	if match == "" {
-		return nil
+	// 1. Look for markdown SQL blocks first
+	sqlRegex := regexp.MustCompile("(?s)```sql\\s*(.*?)\\s*```")
+	if match := sqlRegex.FindStringSubmatch(content); len(match) > 1 {
+		return &ToolCall{
+			Function: FunctionCall{
+				Name:      "execute_sql",
+				Arguments: json.RawMessage(fmt.Sprintf(`{"sql": %q}`, strings.TrimSpace(match[1]))),
+			},
+		}
 	}
 
-	var tc ToolCall
-	// Try to unmarshal into a simplified structure first
-	var raw map[string]interface{}
-	if err := json.Unmarshal([]byte(match), &raw); err != nil {
-		return nil
+	// 2. Look for JSON-like tool call structure
+	jsonRegex := regexp.MustCompile(`\{.*"name".*"(execute_sql|list_tables)".*\}`)
+	if match := jsonRegex.FindString(content); match != "" {
+		var tc struct {
+			Name      string          `json:"name"`
+			Arguments json.RawMessage `json:"arguments"`
+		}
+		if err := json.Unmarshal([]byte(match), &tc); err == nil && tc.Name != "" {
+			return &ToolCall{
+				Function: FunctionCall{
+					Name:      tc.Name,
+					Arguments: tc.Arguments,
+				},
+			}
+		}
 	}
 
-	name, _ := raw["name"].(string)
-	if name == "" {
-		return nil
+	// 3. Last resort: If it contains SELECT/INSERT/CREATE/UPDATE/DELETE
+	upper := strings.ToUpper(content)
+	if strings.Contains(upper, "SELECT") || strings.Contains(upper, "INSERT") || 
+	   strings.Contains(upper, "CREATE TABLE") || strings.Contains(upper, "UPDATE") || 
+	   strings.Contains(upper, "DELETE FROM") {
+		return &ToolCall{
+			Function: FunctionCall{
+				Name:      "execute_sql",
+				Arguments: json.RawMessage(fmt.Sprintf(`{"sql": %q}`, content)),
+			},
+		}
 	}
 
-	tc.Function.Name = name
-
-	// Handle both OpenAI style 'arguments' and model-hallucinated 'parameters' or just raw fields
-	if args, ok := raw["arguments"]; ok {
-		tc.Function.Arguments, _ = json.Marshal(args)
-	} else if params, ok := raw["parameters"]; ok {
-		tc.Function.Arguments, _ = json.Marshal(params)
-	} else {
-		// Just marshal the whole thing as arguments
-		tc.Function.Arguments = []byte(match)
-	}
-
-	return &tc
+	return nil
 }
 
 func (h *Handler) listTablesInternal(ctx context.Context) (interface{}, error) {
-	query := `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name NOT LIKE 'pg_%'`
+	query := `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name NOT LIKE 'pg_%' AND table_name NOT LIKE '_gopherbase_%'`
 	rows, err := h.DB.Query(ctx, query)
 	if err != nil {
 		return nil, err

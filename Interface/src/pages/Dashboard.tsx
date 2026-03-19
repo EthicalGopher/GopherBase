@@ -25,12 +25,19 @@ type DashboardStats = {
   apiRequests24h: number;
 };
 
-type ActivityLog = {
-  id: string;
-  event: string;
-  user: string;
-  table: string;
-  timestamp: string;
+type TableColumn = {
+  name: string;
+  dataType: string;
+  isNullable: string;
+  columnDefault: string | null;
+  isPrimary: boolean;
+  isUnique: boolean;
+  references: {
+    table: string;
+    column: string;
+    onDelete: string;
+    onUpdate: string;
+  } | null;
 };
 
 export default function Dashboard() {
@@ -43,21 +50,95 @@ export default function Dashboard() {
   const [refTableColumns, setRefTableColumns] = useState<Record<string, string[]>>({});
 
   const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [logs, setLogs] = useState<ActivityLog[]>([]);
-  
-  // Pagination State
-  const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 10;
+  const [generatedCode, setGeneratedCode] = useState<string>('// Loading schema...');
+  const [isLoadingCode, setIsLoadingCode] = useState(true);
 
   useEffect(() => {
     fetchStats();
-    fetchLogs();
     const interval = setInterval(() => {
       fetchStats();
-      fetchLogs();
     }, 10000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (tables.length > 0) {
+      generateSchemaCode();
+    } else {
+      setGeneratedCode('// No user tables found in the database.\n// Create a table to see the initialization code.');
+      setIsLoadingCode(false);
+    }
+  }, [tables]);
+
+  const generateSchemaCode = async () => {
+    setIsLoadingCode(true);
+    try {
+      const token = localStorage.getItem('gopherbase_access_token');
+      let code = `import { createClient } from "gopherbase";\n\nconst gb = createClient("${window.location.origin}", "YOUR_PUBLIC_KEY");\n\nasync function setup() {\n`;
+
+      const filteredTables = tables.filter(t => t !== 'auth' && t !== '_gopherbase_config' && t !== '_gopherbase_logs' && t !== '_gopherbase_buckets' && t !== '_gopherbase_files');
+
+      if (filteredTables.length === 0) {
+         setGeneratedCode('// No user tables found.\n// Create a table to generate initialization code.');
+         setIsLoadingCode(false);
+         return;
+      }
+
+      for (const table of filteredTables) {
+        const res = await fetch(`${API_BASE}/schema/${table}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const columns: TableColumn[] = await res.json();
+
+        code += `  // Create ${table} table\n`;
+        code += `  await gb.schema.create("${table}")\n`;
+        
+        columns.forEach((col, idx) => {
+          let dataType = col.dataType.toLowerCase();
+          // Handle PostgreSQL array types (e.g. "text[]", "integer[]")
+          if (dataType.includes('ARRAY') || dataType.startsWith('_')) {
+             dataType = dataType.replace('_', '') + '[]';
+          }
+          
+          let line = `    .column("${col.name}", "${dataType}")`;
+          if (col.isPrimary) line += '.primary()';
+          if (col.isUnique) line += '.unique()';
+          if (col.isNullable === 'NO') line += '.notNull()';
+          if (col.columnDefault) {
+            let def = col.columnDefault;
+            if (def.includes('::')) {
+              def = def.split('::')[0];
+            }
+            // Ensure strings are quoted, but don't double-quote if already quoted
+            if (isNaN(Number(def)) && def !== 'true' && def !== 'false' && !def.startsWith("'") && !def.startsWith('"')) {
+              def = `"${def}"`;
+            }
+            line += `.default(${def})`;
+          }
+          if (col.references) {
+            line += `.references("${col.references.table}", "${col.references.column}")`;
+            if (col.references.onDelete && col.references.onDelete !== 'NO ACTION') {
+              line += `.onDelete("${col.references.onDelete.toLowerCase()}")`;
+            }
+          }
+          
+          if (idx === columns.length - 1) {
+            line += '.execute();\n\n';
+          } else {
+            line += '\n';
+          }
+          code += line;
+        });
+      }
+
+      code += `  console.log("Database initialized successfully!");\n}\n\nsetup();`;
+      setGeneratedCode(code);
+    } catch (err) {
+      console.error('Failed to generate schema code', err);
+      setGeneratedCode('// Error generating schema code. Please try again.');
+    }
+    setIsLoadingCode(false);
+  };
 
   const fetchStats = async () => {
     try {
@@ -72,42 +153,12 @@ export default function Dashboard() {
     }
   };
 
-  const fetchLogs = async () => {
-    try {
-      const token = localStorage.getItem('gopherbase_access_token');
-      const res = await fetch(`${API_BASE}/activity`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        setLogs(data);
-      }
-    } catch (err) {
-      console.error('Failed to fetch logs', err);
-    }
-  };
-
-  const totalPages = Math.max(1, Math.ceil(logs.length / pageSize));
-  const currentLogs = logs.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-
   const formatBytes = (bytes: number) => {
     if (bytes === 0) return '0 B';
     const k = 1024;
     const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
-
-  const formatTime = (timestamp: string) => {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
-    const minutes = Math.floor(diff / 60000);
-    if (minutes < 1) return 'just now';
-    if (minutes < 60) return `${minutes}m ago`;
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h ago`;
-    return date.toLocaleDateString();
   };
 
   const [alertConfig, setAlertConfig] = useState<{ isOpen: boolean; title: string; message: string; type: 'success' | 'error' | 'info' | 'warning' }>({
@@ -163,9 +214,10 @@ export default function Dashboard() {
       const cols = newTableColumns.map(col => ({
         name: col.name,
         type: col.type,
-        isPrimary: col.isPrimaryKey,
-        isNullable: col.isNullable ? 'YES' : 'NO',
-        default: col.defaultValue,
+        primary: col.isPrimaryKey ? true : false,
+        nullable: col.isNullable ? true : false,
+        notNull: !col.isNullable,
+        default: col.defaultValue || null,
         references: col.references?.table && col.references?.column ? col.references : null
       }));
       await createTable(newTableName, cols);
@@ -174,11 +226,44 @@ export default function Dashboard() {
       setNewTableName('');
       setNewTableColumns([{ id: '1', name: 'id', type: 'uuid', isPrimaryKey: true, isNullable: false, defaultValue: 'gen_random_uuid()' }]);
       fetchStats();
-      fetchLogs();
     } catch (err: any) {
       showAlert('Error', err.message || 'Failed to create table', 'error');
     }
   };
+
+  const highlight = (code: string) => {
+    return code
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\/\/(.*)/g, '<span class="text-slate-500">//$1</span>')
+      .replace(/"([^"]*)"/g, '<span class="text-green-400">"$1"</span>')
+      .replace(/\b(import|from|const|async|function|await|console|return)\b/g, '<span class="text-accent-purple">$1</span>')
+      .replace(/\b(gb\.schema\.create|gb\.insert|gb\.from|gb\.query)\b/g, '<span class="text-blue-400">$1</span>')
+      .replace(/\.(column|primary|unique|notNull|default|references|onDelete|execute|log|from|select)\(/g, '.<span class="text-blue-400">$1</span>(');
+  };
+
+  const dataTypes = [
+    { label: 'Scalar Types', options: [
+      { value: 'uuid', label: 'uuid' },
+      { value: 'text', label: 'text' },
+      { value: 'varchar', label: 'varchar' },
+      { value: 'integer', label: 'integer' },
+      { value: 'bigint', label: 'bigint' },
+      { value: 'boolean', label: 'boolean' },
+      { value: 'timestamp', label: 'timestamp' },
+      { value: 'jsonb', label: 'jsonb' },
+    ]},
+    { label: 'Array Types', options: [
+      { value: 'text[]', label: 'text[]' },
+      { value: 'integer[]', label: 'integer[]' },
+      { value: 'uuid[]', label: 'uuid[]' },
+      { value: 'varchar[]', label: 'varchar[]' },
+      { value: 'bigint[]', label: 'bigint[]' },
+      { value: 'boolean[]', label: 'boolean[]' },
+      { value: 'timestamp[]', label: 'timestamp[]' },
+    ]}
+  ];
 
   return (
     <div className="p-8 space-y-8 overflow-y-auto w-full h-full custom-scrollbar">
@@ -238,82 +323,42 @@ export default function Dashboard() {
 
       {/* Main Grid Sections */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Recent Activity (Logs) */}
+        {/* Schema Initialization Code */}
         <div className="lg:col-span-2 space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-xl font-bold dark:text-white flex items-center gap-2">
-              <span className="material-symbols-outlined text-primary">list_alt</span>
-              Recent Database Activity
+              <span className="material-symbols-outlined text-primary">schema</span>
+              Initialize Your Database
             </h3>
-            <button 
-              onClick={() => {
-                setCurrentPage(1);
-                fetchLogs();
-              }}
-              className="text-xs font-bold text-primary hover:underline uppercase tracking-wider"
-            >
-              Refresh
-            </button>
-          </div>
-          <div className="glass-card rounded-xl overflow-hidden flex flex-col">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead className="bg-slate-50 dark:bg-slate-800/50">
-                  <tr>
-                    <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Event</th>
-                    <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">User</th>
-                    <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Table</th>
-                    <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Time</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {currentLogs.length > 0 ? currentLogs.map((log) => (
-                    <tr key={log.id} className="hover:bg-primary/5 transition-colors group">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <span className={`w-2 h-2 rounded-full ${
-                            log.event.includes('SUCCESS') ? 'bg-green-500' : 
-                            log.event.includes('FAIL') ? 'bg-red-500' : 'bg-blue-500'
-                          }`}></span>
-                          <span className="text-sm font-mono dark:text-slate-200">{log.event}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{log.user || 'system'}</td>
-                      <td className="px-6 py-4 text-sm font-medium">{log.table || '-'}</td>
-                      <td className="px-6 py-4 text-sm text-slate-500 text-right">{formatTime(log.timestamp)}</td>
-                    </tr>
-                  )) : (
-                    <tr>
-                      <td colSpan={4} className="px-6 py-8 text-center text-slate-500 dark:text-slate-400">
-                        No activity recorded yet.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={generateSchemaCode}
+                className="text-xs font-bold text-slate-500 hover:text-primary transition-colors flex items-center gap-1"
+              >
+                <span className={`material-symbols-outlined text-sm ${isLoadingCode ? 'animate-spin' : ''}`}>refresh</span>
+                Refresh
+              </button>
+              <button 
+                onClick={() => {
+                  navigator.clipboard.writeText(generatedCode);
+                  showAlert('Copied!', 'Initialization code copied to clipboard', 'success');
+                }}
+                className="text-xs font-bold text-primary hover:underline uppercase tracking-wider flex items-center gap-1"
+              >
+                <span className="material-symbols-outlined text-sm">content_copy</span>
+                Copy File
+              </button>
             </div>
-            
-            {/* Pagination Footer */}
-            <div className="p-4 bg-slate-50/50 dark:bg-slate-800/30 flex items-center justify-between border-t border-slate-100 dark:border-slate-800">
-              <div className="text-xs text-slate-500 font-medium">
-                Showing {(currentPage - 1) * pageSize + 1}-{Math.min(currentPage * pageSize, logs.length)} of {logs.length} events
+          </div>
+          <div className="glass-card rounded-xl overflow-hidden flex flex-col h-[480px]">
+            <div className="flex-1 flex font-mono text-[13px] leading-relaxed overflow-hidden">
+              <div className="bg-slate-900/50 text-slate-500 text-right py-6 px-4 select-none border-r border-slate-800 flex flex-col shrink-0 min-w-[50px]">
+                {generatedCode.split('\n').map((_, i) => (
+                  <div key={i} className="h-6 leading-6">{i + 1}</div>
+                ))}
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-400 mr-2">Page {currentPage} of {totalPages}</span>
-                <button 
-                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  disabled={currentPage === 1}
-                  className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-                >
-                  <span className="material-symbols-outlined text-sm block">chevron_left</span>
-                </button>
-                <button 
-                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                  disabled={currentPage >= totalPages}
-                  className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-                >
-                  <span className="material-symbols-outlined text-sm block">chevron_right</span>
-                </button>
+              <div className="flex-1 bg-slate-900/20 p-6 overflow-auto custom-scrollbar text-slate-300">
+                <pre className="whitespace-pre" dangerouslySetInnerHTML={{ __html: highlight(generatedCode) }} />
               </div>
             </div>
           </div>
@@ -450,14 +495,13 @@ export default function Dashboard() {
                                 onChange={(e) => handleColumnChange(col.id, 'type', e.target.value)}
                                 className="w-full px-3 py-2 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:ring-1 focus:ring-primary outline-none"
                               >
-                                <option value="uuid">uuid</option>
-                                <option value="text">text</option>
-                                <option value="varchar">varchar</option>
-                                <option value="integer">integer</option>
-                                <option value="bigint">bigint</option>
-                                <option value="boolean">boolean</option>
-                                <option value="timestamp">timestamp</option>
-                                <option value="jsonb">jsonb</option>
+                                {dataTypes.map(group => (
+                                  <optgroup key={group.label} label={group.label}>
+                                    {group.options.map(opt => (
+                                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                    ))}
+                                  </optgroup>
+                                ))}
                               </select>
                             </div>
                             <div className="col-span-1 md:col-span-3">

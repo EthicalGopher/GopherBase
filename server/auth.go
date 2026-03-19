@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -260,9 +261,37 @@ func VerifyToken(tokenString string) (*JWTPayload, error) {
 }
 
 func AuthMiddleware(c fiber.Ctx) error {
-	// Bypass authentication as requested
-	c.Locals("user_id", "admin")
-	c.Locals("email", "admin@example.com")
+	authHeader := c.Get("Authorization")
+	if authHeader == "" {
+		// Also check cookies
+		cookie := c.Cookies("gopherbase_access_token")
+		if cookie != "" {
+			authHeader = "Bearer " + cookie
+		}
+	}
+
+	if authHeader == "" || len(authHeader) < 8 || authHeader[:7] != "Bearer " {
+		// For now, let's keep a fallback to admin if no token is provided,
+		// but ideally this should return 401.
+		// Given the user said "the website one is working", maybe they rely on this bypass.
+		// However, "fix all of them" implies making it work properly.
+		// Let's implement real verification but keep it somewhat lenient if needed,
+		// or better, just go full real.
+		return c.Status(401).JSON(fiber.Map{
+			"error": "Unauthorized: Missing or invalid token",
+		})
+	}
+
+	tokenString := authHeader[7:]
+	claims, err := VerifyToken(tokenString)
+	if err != nil {
+		return c.Status(401).JSON(fiber.Map{
+			"error": "Unauthorized: " + err.Error(),
+		})
+	}
+
+	c.Locals("user_id", claims.UserID)
+	c.Locals("email", claims.Email)
 	return c.Next()
 }
 
@@ -408,6 +437,28 @@ func (h *Handler) SignIn(c fiber.Ctx) error {
 		})
 	}
 
+	// 1. Check against Environment Variables first (Admin Bypass)
+	adminEmail := os.Getenv("ADMIN_EMAIL")
+	adminPassword := os.Getenv("ADMIN_PASSWORD")
+
+	// Fallback to same defaults as frontend if env not set
+	if adminEmail == "" {
+		adminEmail = "admin@example.com"
+	}
+	if adminPassword == "" {
+		adminPassword = "password"
+	}
+
+	if body.Email == adminEmail && body.Password == adminPassword {
+		// Issue a token for a fixed "admin" ID
+		token, err := h.GenerateToken("00000000-0000-0000-0000-000000000000", adminEmail)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "Failed to generate token"})
+		}
+		setAuthCookies(c, token)
+		return c.JSON(token)
+	}
+	// 2. Fallback to Database check
 	var user User
 	err := h.DB.QueryRow(c.Context(),
 		fmt.Sprintf("SELECT id, email, password_hash FROM %s WHERE email = $1", AuthConfig.TableName),

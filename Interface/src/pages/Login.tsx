@@ -2,8 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function Login() {
-  const { signIn, signUp, error, setError } = useAuth();
-  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
+  const { signIn, error, setError } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -13,11 +12,7 @@ export default function Login() {
     setLoading(true);
     setError(null);
     try {
-      if (authMode === 'signin') {
-        await signIn(email, password);
-      } else {
-        await signUp(email, password);
-      }
+      await signIn(email, password);
     } catch (err) {
       // Error is handled in context
     }
@@ -32,7 +27,7 @@ export default function Login() {
             <span className="material-symbols-outlined text-2xl">database</span>
           </div>
           <h1 className="text-2xl font-bold dark:text-white">GopherBase</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Database Management Interface</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Admin Management Interface</p>
         </div>
 
         {error && (
@@ -44,12 +39,12 @@ export default function Login() {
 
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Email</label>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Admin Email</label>
             <input
               type="email"
               value={email}
               onChange={e => setEmail(e.target.value)}
-              placeholder="you@example.com"
+              placeholder="admin@example.com"
               required
               className="w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800/50 text-slate-900 dark:text-white focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all"
             />
@@ -74,22 +69,12 @@ export default function Login() {
             {loading ? (
               <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
             ) : null}
-            {authMode === 'signin' ? 'Sign In' : 'Sign Up'}
+            Sign In
           </button>
         </form>
 
-        <div className="mt-6 text-center text-sm text-slate-500 dark:text-slate-400">
-          {authMode === 'signin' ? "Don't have an account? " : "Already have an account? "}
-          <button
-            type="button"
-            onClick={() => {
-              setAuthMode(authMode === 'signin' ? 'signup' : 'signin');
-              setError(null);
-            }}
-            className="text-primary font-semibold hover:underline"
-          >
-            {authMode === 'signin' ? 'Sign Up' : 'Sign In'}
-          </button>
+        <div className="mt-8 pt-6 border-t border-slate-100 dark:border-slate-800/50 text-center">
+          <p className="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-widest font-bold">Secure Access</p>
         </div>
       </div>
     </div>

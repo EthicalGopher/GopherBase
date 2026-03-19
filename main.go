@@ -5,22 +5,35 @@ import (
 	"embed"
 	"fmt"
 	"gopherbase/server"
+	"io/fs"
 	"log"
 	"os"
+	"time"
 
 	"github.com/gofiber/contrib/v3/websocket"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/cors"
+	"github.com/gofiber/fiber/v3/middleware/static"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/wailsapp/wails/v2"
-	"github.com/wailsapp/wails/v2/pkg/options"
-	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/joho/godotenv"
 )
 
 //go:embed all:Interface/dist
 var assets embed.FS
 
-func startFiber(h *server.Handler) {
+func init() {
+	godotenv.Load()
+}
+
+func main() {
+	connStr := os.Getenv("DATABASE_URL")
+	if connStr == "" {
+		connStr = "postgres://gopherbase:gopherbase@localhost:5432/gopherbase?sslmode=disable"
+	}
+
+	pool, _ := pgxpool.New(context.Background(), connStr)
+	h := server.NewHandler(pool)
+
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
 		jwtSecret = "your-default-secret-key-change-in-production"
@@ -32,52 +45,40 @@ func startFiber(h *server.Handler) {
 
 	server.InitAuth(jwtSecret, authTable)
 
-	err := h.CreateAuthTable()
-	if err != nil {
-		log.Printf("Warning: Failed to create auth table: %v\n", err)
-	}
+	// Background initialization
+	go func() {
+		for h.DB == nil {
+			log.Printf("Waiting for database connection...")
+			newPool, err := pgxpool.New(context.Background(), connStr)
+			if err == nil {
+				h.DB = newPool
+				break
+			}
+			time.Sleep(5 * time.Second)
+		}
 
-	err = h.CreateConfigTable()
-	if err != nil {
-		log.Printf("Warning: Failed to create config table: %v\n", err)
-	}
-
-	err = h.CreateLogsTable()
-	if err != nil {
-		log.Printf("Warning: Failed to create logs table: %v\n", err)
-	}
-
-	err = h.InitStorage()
-	if err != nil {
-		log.Printf("Warning: Failed to initialize storage: %v\n", err)
-	}
-
-	err = h.LoadConfigFromDB()
-	if err != nil {
-		log.Printf("Note: No config found in database, using defaults")
-	}
+		fmt.Println("Database connected, initializing tables...")
+		h.DB.Exec(context.Background(), "CREATE EXTENSION IF NOT EXISTS \"pgcrypto\";")
+		h.CreateAuthTable()
+		h.CreateConfigTable()
+		h.CreateLogsTable()
+		h.InitStorage()
+		h.LoadConfigFromDB()
+	}()
 
 	app := fiber.New()
 	app.Use(cors.New(cors.Config{
-		AllowOrigins: []string{
-			"http://localhost:5173",
-			"http://localhost:5174",
-			"http://127.0.0.1:3000",
-			"http://127.0.0.1:5173",
-			"http://127.0.0.1:5174",
-			"wails://wails.localhost",
+		AllowOriginsFunc: func(origin string) bool {
+			return true
 		},
 		AllowCredentials: true,
 		AllowHeaders:     []string{"Content-Type", "Authorization"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 	}))
 
-	// Top-level WebSocket route
+	// API Routes
 	app.Get("/ws", websocket.New(h.AIWebSocket))
-
-	api := app.Group("/rest")
-	api1 := api.Group("/v1")
-
+	api1 := app.Group("/rest/v1")
 	api1.Get("/auth/config", server.GetAuthConfig)
 	api1.Post("/auth/config", h.UpdateAuthConfig)
 	api1.Post("/auth/signup", h.SignUp)
@@ -87,20 +88,16 @@ func startFiber(h *server.Handler) {
 	protected := api1.Group("", server.AuthMiddleware)
 	protected.Post("/auth/signout", server.SignOut)
 	protected.Get("/auth/user", h.GetUser)
-
-	api1.Post("/schema/create/:table", server.AuthMiddleware, h.CreateTable)
-	api1.Post("/schema/alter/:table", server.AuthMiddleware, h.AlterTable)
-	api1.Delete("/schema/drop/:table", server.AuthMiddleware, h.DropTable)
-	api1.Get("/schema/tables", server.AuthMiddleware, h.GetTables)
-	api1.Get("/schema/:table", server.AuthMiddleware, h.GetTableSchema)
-
-	api1.Post("/insert/:table", server.AuthMiddleware, h.Insert)
-	api1.Delete("/delete/:table", server.AuthMiddleware, h.DeleteRow)
-
-	api1.Get("/select/:table", server.AuthMiddleware, h.Select)
-	api1.Post("/query", server.AuthMiddleware, h.RawQuery)
-	api1.Post("/ai/query", server.AuthMiddleware, h.AIQuery)
-
+	protected.Post("/schema/create/:table", h.CreateTable)
+	protected.Post("/schema/alter/:table", h.AlterTable)
+	protected.Delete("/schema/drop/:table", h.DropTable)
+	protected.Get("/schema/tables", h.GetTables)
+	protected.Get("/schema/:table", h.GetTableSchema)
+	protected.Post("/insert/:table", h.Insert)
+	protected.Delete("/delete/:table", h.DeleteRow)
+	protected.Get("/select/:table", h.Select)
+	protected.Post("/query", h.RawQuery)
+	protected.Post("/ai/query", h.AIQuery)
 	protected.Get("/storage/buckets", h.ListBuckets)
 	protected.Post("/storage/buckets", h.CreateBucket)
 	protected.Delete("/storage/buckets/:bucket", h.DeleteBucket)
@@ -108,56 +105,42 @@ func startFiber(h *server.Handler) {
 	protected.Post("/storage/buckets/:bucket/upload", h.UploadFile)
 	protected.Delete("/storage/buckets/:bucket/files/:file", h.DeleteFile)
 	protected.Get("/storage/buckets/:bucket/files/:file", h.DownloadFile)
-
 	protected.Get("/stats", h.GetStats)
 	protected.Get("/activity", h.GetActivityLogs)
 
-	log.Printf("Starting Fiber server on :8080")
-	log.Fatal(app.Listen(":8080"))
-}
+	// Serve Frontend
+	dist, _ := fs.Sub(assets, "Interface/dist")
 
-func main() {
-	connStr := os.Getenv("DATABASE_URL")
-	if connStr == "" {
-		connStr = "postgres://gopherbase:gopherbase@localhost:5432/gopherbase?sslmode=disable"
-	}
-	pool, err := pgxpool.New(context.Background(), connStr)
-	if err != nil {
-		log.Fatalf("Unable to connect to database: %v\n", err)
-	}
-	defer pool.Close()
+	// Use static middleware for all assets
+	app.Use("/", static.New("", static.Config{
+		FS:         dist,
+		IndexNames: []string{"index.html"},
+	}))
 
-	h := server.NewHandler(pool)
+	// SPA Fallback: for routes that don't match static files and are not API/WS
+	app.Use(func(c fiber.Ctx) error {
+		path := c.Path()
 
-	fmt.Println("Connected to PostgreSQL")
+		// If it's an API route, WebSocket, or static asset, return 404 instead of index.html
+		// This prevents the browser from getting index.html when it expects a JS/CSS file (MIME error)
+		if (len(path) >= 5 && path[:5] == "/rest") || path == "/ws" || (len(path) >= 7 && path[:7] == "/assets") {
+			return c.Status(404).JSON(fiber.Map{"error": "Not Found"})
+		}
 
-	_, err = pool.Exec(context.Background(), "CREATE EXTENSION IF NOT EXISTS \"pgcrypto\";")
-	if err != nil {
-		log.Printf("Warning: Failed to create pgcrypto extension: %v\n", err)
-	}
+		// Serve index.html for browser navigation (SPA routing)
+		index, err := fs.ReadFile(dist, "index.html")
+		if err == nil {
+			c.Set("Content-Type", "text/html; charset=utf-8")
+			return c.Send(index)
+		}
 
-	// Start Fiber server in a goroutine
-	go startFiber(h)
-
-	// Create application with options
-	app := NewApp(h)
-
-	// Create Wails application
-	err = wails.Run(&options.App{
-		Title:  "GopherBase",
-		Width:  1024,
-		Height: 768,
-		AssetServer: &assetserver.Options{
-			Assets: assets,
-		},
-		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
-		OnStartup:        app.startup,
-		Bind: []interface{}{
-			app,
-		},
+		return c.Next()
 	})
-
-	if err != nil {
-		println("Error:", err.Error())
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
 	}
+
+	log.Printf("GopherBase server starting on :%s", port)
+	log.Fatal(app.Listen(":" + port))
 }
