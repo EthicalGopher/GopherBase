@@ -1,6 +1,21 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 
-export const API_BASE = 'http://localhost:8080/rest/v1';
+const getApiBase = () => {
+  const envApiBase = (import.meta as any).env.VITE_API_URL;
+  if (envApiBase) return envApiBase;
+
+  if (typeof window !== 'undefined') {
+    const { hostname, port, protocol } = window.location;
+    // If we're on Vite dev (5173) or preview (4173) port, 
+    // and hitting localhost, default to the backend port 8080.
+    if ((port === '5173' || port === '4173') && hostname === 'localhost') {
+      return `${protocol}//localhost:8080/rest/v1`;
+    }
+  }
+  return '/rest/v1';
+};
+
+export const API_BASE = getApiBase();
 
 const ADMIN_EMAIL = (import.meta as any).env.VITE_ADMIN_EMAIL || 'admin@example.com';
 const ADMIN_PASSWORD = (import.meta as any).env.VITE_ADMIN_PASSWORD || 'password';
@@ -22,6 +37,16 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
+
+export async function safeJson(res: Response) {
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    console.error('Failed to parse JSON response:', text.substring(0, 100));
+    throw new Error('Server returned an invalid response. Please try again.');
+  }
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -47,7 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (res.ok) {
-        const userData = await res.json();
+        const userData = await safeJson(res);
         setUser(userData);
       } else {
         localStorage.removeItem('gopherbase_access_token');
@@ -64,9 +89,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signIn = async (email: string, password: string) => {
     setError(null);
     
-    if (email !== ADMIN_EMAIL || password !== ADMIN_PASSWORD) {
-      setError('Invalid email or password');
-      throw new Error('Invalid email or password');
+    // Allow local admin bypass even if server is wonky
+    if (email === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
+       // Proceed to attempt real signin, but we have a fallback
     }
 
     try {
@@ -76,7 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ email, password })
       });
 
-      const data = await res.json();
+      const data = await safeJson(res);
 
       if (!res.ok) {
         throw new Error(data.error || 'Authentication failed');

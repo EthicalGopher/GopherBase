@@ -1,20 +1,19 @@
 import { useState } from 'react';
-import { API_BASE } from '../contexts/AuthContext';
+import { API_BASE, safeJson } from '../contexts/AuthContext';
 
 export default function SQLEditor() {
-  const [query, setQuery] = useState('SELECT * FROM _gopherbase_logs LIMIT 10;');
-  const [results, setResults] = useState<{ columns: string[], rows: any[] } | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const [query, setQuery] = useState('SELECT * FROM auth;');
+  const [result, setResult] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
   const [execTime, setExecTime] = useState<number | null>(null);
 
   const handleRunQuery = async () => {
-    setLoading(true);
+    setIsLoading(true);
     setError(null);
-    setMessage(null);
-    setResults(null);
+    setResult(null);
     const start = performance.now();
+
     try {
       const token = localStorage.getItem('gopherbase_access_token');
       const res = await fetch(`${API_BASE}/query`, {
@@ -25,7 +24,7 @@ export default function SQLEditor() {
         },
         body: JSON.stringify({ query })
       });
-      const data = await res.json();
+      const data = await safeJson(res);
       const end = performance.now();
       setExecTime(Math.round(end - start));
 
@@ -33,137 +32,124 @@ export default function SQLEditor() {
         throw new Error(data.error || 'Failed to execute query');
       }
 
-      if (data.columns && data.rows) {
-        setResults({ columns: data.columns, rows: data.rows });
-      } else {
-        setMessage(data.message + (data.rowsAffected !== undefined ? ` (${data.rowsAffected} rows affected)` : ''));
-      }
+      setResult(data);
     } catch (err: any) {
       setError(err.message);
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 overflow-hidden h-full bg-editor-bg">
-      {/* Code Editor Panel */}
-      <div className="flex-1 relative flex flex-col overflow-hidden border-b border-slate-200 dark:border-slate-800">
-        <div className="flex-1 flex font-mono text-sm leading-relaxed p-0 overflow-hidden">
-          <div className="bg-slate-900/50 text-slate-500 text-right py-6 px-4 select-none border-r border-slate-800 flex flex-col">
-            {Array.from({ length: 20 }).map((_, i) => (
-              <div key={i}>{i + 1}</div>
-            ))}
+    <div className="flex-1 flex flex-col h-full bg-slate-50 dark:bg-slate-900/20 overflow-hidden">
+      {/* Editor Header */}
+      <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center">
+            <span className="material-symbols-outlined text-indigo-500 text-sm">terminal</span>
           </div>
-          <textarea
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            spellCheck={false}
-            className="flex-1 bg-transparent text-slate-300 p-6 outline-none resize-none custom-scrollbar"
-            placeholder="-- Write your SQL query here..."
-          />
+          <div>
+            <h2 className="text-sm font-bold text-slate-900 dark:text-white">SQL Editor</h2>
+            <p className="text-[10px] text-slate-500 font-medium">Execute raw PostgreSQL commands</p>
+          </div>
         </div>
-
-        {/* Action Bar */}
-        <div className="px-6 py-3 bg-slate-900/20 flex justify-between items-center border-t border-slate-800">
-          <div className="flex gap-2">
-            <button 
-              onClick={handleRunQuery}
-              disabled={loading}
-              className="flex items-center gap-2 bg-primary text-white px-4 py-1.5 rounded-lg text-sm font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 disabled:opacity-50"
-            >
-              <span className="material-symbols-outlined text-sm">{loading ? 'progress_activity' : 'play_arrow'}</span>
-              {loading ? 'Running...' : 'Run Query'}
-            </button>
-            <button 
-              onClick={() => setQuery('')}
-              className="flex items-center gap-2 text-slate-400 hover:text-white px-3 py-1.5 rounded-lg text-sm font-medium transition-all"
-            >
-              Clear
-            </button>
-          </div>
-          <div className="flex gap-4 text-[10px] uppercase tracking-widest text-slate-500">
-            <span>PostgreSQL 15.4</span>
-            <span>UTF-8</span>
-          </div>
+        <div className="flex items-center gap-3">
+          {execTime && (
+            <span className="text-[10px] font-mono text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">
+              Executed in {execTime}ms
+            </span>
+          )}
+          <button 
+            onClick={handleRunQuery}
+            disabled={isLoading}
+            className="flex items-center gap-2 px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all shadow-lg shadow-indigo-600/20 disabled:opacity-50"
+          >
+            {isLoading ? (
+              <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+            ) : (
+              <span className="material-symbols-outlined !text-sm">play_arrow</span>
+            )}
+            Run Query
+          </button>
         </div>
       </div>
 
-      {/* Results Pane */}
-      <div className="h-[45%] flex flex-col bg-background-light dark:bg-background-dark overflow-hidden">
-        <div className="px-6 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <button className={`text-sm font-semibold pb-1 border-b-2 ${results ? 'border-primary text-slate-900 dark:text-white' : 'border-transparent text-slate-500'}`}>
-              Query Results
-            </button>
-            <button className={`text-sm font-semibold pb-1 border-b-2 ${message || error ? 'border-primary text-slate-900 dark:text-white' : 'border-transparent text-slate-500'}`}>
-              Messages
-            </button>
-          </div>
-          {execTime !== null && (
-            <div className="text-xs text-slate-500">
-              {results ? `Fetched ${results.rows.length} rows` : 'Executed'} in {execTime}ms
-            </div>
-          )}
+      {/* Editor Content */}
+      <div className="flex-1 grid grid-rows-2 overflow-hidden">
+        {/* SQL Input */}
+        <div className="relative border-b border-slate-200 dark:border-slate-800">
+          <textarea
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="w-full h-full p-6 font-mono text-sm bg-white dark:bg-slate-900 outline-none resize-none custom-scrollbar text-slate-700 dark:text-slate-300"
+            spellCheck={false}
+          />
         </div>
-        
-        <div className="flex-1 overflow-auto custom-scrollbar">
-          {error && (
-            <div className="p-6">
-              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4 flex gap-3 text-red-500">
-                <span className="material-symbols-outlined">error</span>
-                <div className="text-sm font-mono whitespace-pre-wrap">{error}</div>
-              </div>
-            </div>
-          )}
 
-          {message && !error && (
-            <div className="p-6">
-              <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4 flex gap-3 text-blue-500 font-mono text-sm">
-                <span className="material-symbols-outlined">info</span>
-                {message}
+        {/* Results Pane */}
+        <div className="bg-white dark:bg-slate-900 flex flex-col overflow-hidden">
+          <div className="px-6 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Query Results</span>
+            {result?.rows && (
+              <span className="text-[10px] font-bold text-indigo-500 bg-indigo-50/10 px-2 py-0.5 rounded">
+                {result.rows.length} rows returned
+              </span>
+            )}
+          </div>
+          
+          <div className="flex-1 overflow-auto custom-scrollbar">
+            {error ? (
+              <div className="p-8 flex flex-col items-center justify-center text-center max-w-lg mx-auto">
+                <span className="material-symbols-outlined text-4xl text-red-500 mb-4 animate-bounce">warning</span>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">SQL Execution Error</h3>
+                <code className="text-xs font-mono bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-4 rounded-xl border border-red-100 dark:border-red-900/50 block w-full text-left whitespace-pre-wrap">
+                  {error}
+                </code>
               </div>
-            </div>
-          )}
-
-          {results && !error && (
-            <table className="w-full text-left border-collapse min-w-[600px]">
-              <thead className="sticky top-0 bg-slate-50 dark:bg-slate-900/80 backdrop-blur-sm shadow-sm z-10">
-                <tr>
-                  {results.columns.map(col => (
-                    <th key={col} className="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200 dark:border-slate-800">
-                      {col}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
-                {results.rows.map((row, i) => (
-                  <tr key={i} className="hover:bg-slate-50 dark:hover:bg-primary/5 transition-colors">
-                    {results.columns.map(col => (
-                      <td key={col} className="px-6 py-3 text-sm font-mono text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                        {row[col] === null ? <span className="text-slate-500 italic">NULL</span> : String(row[col])}
-                      </td>
+            ) : result?.rows ? (
+              <div className="min-w-full">
+                <table className="w-full text-left border-collapse">
+                  <thead className="sticky top-0 z-10">
+                    <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800">
+                      {result.columns?.map((col: string) => (
+                        <th key={col} className="px-4 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-widest border-r border-slate-100 dark:border-slate-800 last:border-0">{col}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {result.rows.map((row: any, idx: number) => (
+                      <tr key={idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                        {result.columns?.map((col: string) => (
+                          <td key={col} className="px-4 py-3 text-xs font-mono text-slate-600 dark:text-slate-400 border-r border-slate-50 dark:border-slate-800 last:border-0 truncate max-w-xs">
+                            {row[col] === null ? (
+                              <span className="text-slate-300 italic">NULL</span>
+                            ) : typeof row[col] === 'object' ? (
+                              JSON.stringify(row[col])
+                            ) : String(row[col])}
+                          </td>
+                        ))}
+                      </tr>
                     ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-
-          {!results && !message && !error && !loading && (
-            <div className="h-full flex flex-col items-center justify-center text-slate-500 opacity-50">
-              <span className="material-symbols-outlined text-4xl mb-2">data_usage</span>
-              <p className="text-sm">Run a query to see results</p>
-            </div>
-          )}
-
-          {loading && (
-            <div className="h-full flex flex-col items-center justify-center text-slate-500">
-              <span className="material-symbols-outlined animate-spin text-4xl mb-2">progress_activity</span>
-              <p className="text-sm">Executing query...</p>
-            </div>
-          )}
+                  </tbody>
+                </table>
+              </div>
+            ) : result?.message ? (
+              <div className="p-8 text-center">
+                <div className="w-12 h-12 rounded-full bg-emerald-500/10 flex items-center justify-center mx-auto mb-4">
+                  <span className="material-symbols-outlined text-emerald-500">check_circle</span>
+                </div>
+                <p className="text-sm font-bold text-slate-900 dark:text-white">{result.message}</p>
+                {result.rowsAffected !== undefined && (
+                  <p className="text-xs text-slate-500 mt-1">{result.rowsAffected} rows affected</p>
+                )}
+              </div>
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center opacity-30 text-slate-400">
+                <span className="material-symbols-outlined text-6xl mb-4">dataset</span>
+                <p className="text-sm font-medium">Execute a query to see results</p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

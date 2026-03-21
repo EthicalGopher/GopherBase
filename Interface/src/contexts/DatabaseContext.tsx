@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { API_BASE, useAuth } from './AuthContext';
+import { API_BASE, useAuth, safeJson } from './AuthContext';
 
 interface TableColumn {
   name: string;
@@ -25,6 +25,11 @@ interface DatabaseContextType {
   tables: string[];
   fetchTables: () => Promise<void>;
   createTable: (tableName: string, cols: TableColumn[]) => Promise<void>;
+  alterTable: (tableName: string, payload: { 
+    add?: TableColumn[], 
+    drop?: string[], 
+    rename?: { old: string, new: string }[] 
+  }) => Promise<void>;
   dropTable: (tableName: string) => Promise<void>;
 }
 
@@ -50,7 +55,7 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
       const res = await fetch(`${API_BASE}/schema/tables`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      const data = await res.json();
+      const data = await safeJson(res);
       if (Array.isArray(data)) {
         setTables(data);
       } else {
@@ -83,8 +88,46 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
     });
 
     if (!res.ok) {
-      const data = await res.json();
+      const data = await safeJson(res);
       throw new Error(data.error || 'Failed to create table');
+    }
+
+    await fetchTables();
+  };
+
+  const alterTable = async (tableName: string, payload: { 
+    add?: TableColumn[], 
+    drop?: string[], 
+    rename?: { old: string, new: string }[] 
+  }) => {
+    const token = localStorage.getItem('gopherbase_access_token');
+    
+    const formattedPayload = {
+      add: payload.add?.map(col => ({
+        name: col.name,
+        type: (col.type || col.dataType || 'VARCHAR').toUpperCase(),
+        notNull: col.notNull ?? col.isNullable === 'NO',
+        primary: col.primary ?? col.isPrimary,
+        unique: col.unique ?? col.isUnique,
+        default: col.default ?? col.columnDefault,
+        references: (col.references && col.references.table) ? col.references : null
+      })),
+      drop: payload.drop,
+      rename: payload.rename
+    };
+
+    const res = await fetch(`${API_BASE}/schema/alter/${tableName}`, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(formattedPayload)
+    });
+
+    if (!res.ok) {
+      const data = await safeJson(res);
+      throw new Error(data.error || 'Failed to alter table');
     }
 
     await fetchTables();
@@ -98,7 +141,7 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
     });
     
     if (!res.ok) {
-      const data = await res.json();
+      const data = await safeJson(res);
       throw new Error(data.error || 'Failed to drop table');
     }
     
@@ -106,7 +149,7 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <DatabaseContext.Provider value={{ tables, fetchTables, createTable, dropTable }}>
+    <DatabaseContext.Provider value={{ tables, fetchTables, createTable, alterTable, dropTable }}>
       {children}
     </DatabaseContext.Provider>
   );

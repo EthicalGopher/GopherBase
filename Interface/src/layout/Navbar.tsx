@@ -1,4 +1,4 @@
-import { useLocation } from 'react-router-dom';
+import { useLocation, Link } from 'react-router-dom';
 
 export default function Navbar() {
   const location = useLocation();
@@ -26,24 +26,13 @@ export default function Navbar() {
       </div>
 
       <div className="flex items-center gap-4">
-        <div className="relative hidden md:block">
-          <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-lg">search</span>
-          <input 
-            type="text" 
-            placeholder="Search anything..." 
-            className="pl-10 pr-4 py-2 bg-slate-100 dark:bg-slate-800/50 border-transparent focus:bg-white dark:focus:bg-slate-800 border dark:border-slate-700 rounded-full text-sm w-64 transition-all outline-none focus:ring-2 focus:ring-primary/20"
-          />
-        </div>
-        <button className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors relative">
-          <span className="material-symbols-outlined text-slate-600 dark:text-slate-400">notifications</span>
-          <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white dark:border-background-dark"></span>
-        </button>
-        <div className="w-px h-6 bg-slate-200 dark:border-slate-800 mx-2"></div>
-        <button className="flex items-center gap-3 pl-2 pr-1 py-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-primary to-accent-purple flex items-center justify-center text-white text-xs font-bold shadow-lg shadow-primary/20">
-            GB
-          </div>
-        </button>
+        <Link
+          to="/settings"
+          className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors relative"
+          title="Settings"
+        >
+          <span className="material-symbols-outlined text-slate-600 dark:text-slate-400">settings</span>
+        </Link>
       </div>
     </header>
   );

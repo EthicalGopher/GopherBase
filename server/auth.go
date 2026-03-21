@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"sync"
@@ -126,6 +127,9 @@ func (h *Handler) CreateConfigTable() error {
 }
 
 func (h *Handler) LoadConfigFromDB() error {
+	if h.DB == nil {
+		return fmt.Errorf("database not initialized")
+	}
 	var configJSON string
 	err := h.DB.QueryRow(context.Background(),
 		"SELECT value::text FROM _gopherbase_config WHERE key = 'auth'",
@@ -151,7 +155,7 @@ func (h *Handler) LoadConfigFromDB() error {
 }
 
 func parseConfigJSON(jsonStr string, config *Config) error {
-	return fmt.Errorf("parsing not implemented")
+	return json.Unmarshal([]byte(jsonStr), config)
 }
 
 func (h *Handler) SetJWTSecret(secret string) error {
@@ -215,23 +219,25 @@ func (h *Handler) GenerateToken(userID, email string) (AuthToken, error) {
 		"email": email,
 	}
 
-	rows, err := h.DB.Query(context.Background(), fmt.Sprintf("SELECT * FROM %s WHERE id = $1", AuthConfig.TableName), userID)
-	if err == nil {
-		defer rows.Close()
-		if rows.Next() {
-			values, err := rows.Values()
-			if err == nil {
-				fields := rows.FieldDescriptions()
-				for i, fd := range fields {
-					col := string(fd.Name)
-					if col != "password_hash" {
-						userData[col] = values[i]
+	if h.DB != nil {
+		rows, err := h.DB.Query(context.Background(), fmt.Sprintf("SELECT * FROM %s WHERE id = $1", AuthConfig.TableName), userID)
+		if err == nil {
+			defer rows.Close()
+			if rows.Next() {
+				values, err := rows.Values()
+				if err == nil {
+					fields := rows.FieldDescriptions()
+					for i, fd := range fields {
+						col := string(fd.Name)
+						if col != "password_hash" {
+							userData[col] = values[i]
+						}
 					}
 				}
 			}
-		}
-		if err := rows.Err(); err != nil {
-			fmt.Println("Error iterating rows:", err)
+			if err := rows.Err(); err != nil {
+				fmt.Println("Error iterating rows:", err)
+			}
 		}
 	}
 
@@ -353,6 +359,9 @@ type SignInRequest struct {
 }
 
 func (h *Handler) SignUp(c fiber.Ctx) error {
+	if h.DB == nil {
+		return c.Status(503).JSON(fiber.Map{"error": "Database not ready"})
+	}
 	var body SignUpRequest
 	if err := c.Bind().Body(&body); err != nil {
 		return c.Status(400).JSON(fiber.Map{
@@ -458,6 +467,11 @@ func (h *Handler) SignIn(c fiber.Ctx) error {
 		setAuthCookies(c, token)
 		return c.JSON(token)
 	}
+
+	if h.DB == nil {
+		return c.Status(503).JSON(fiber.Map{"error": "Database not ready"})
+	}
+
 	// 2. Fallback to Database check
 	var user User
 	err := h.DB.QueryRow(c.Context(),
@@ -495,6 +509,10 @@ func (h *Handler) GetUser(c fiber.Ctx) error {
 	result := fiber.Map{
 		"id":    userID,
 		"email": email,
+	}
+
+	if h.DB == nil {
+		return c.JSON(result)
 	}
 
 	rows, err := h.DB.Query(c.Context(), fmt.Sprintf("SELECT * FROM %s WHERE id = $1", AuthConfig.TableName), userID)

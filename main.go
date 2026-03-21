@@ -13,6 +13,7 @@ import (
 	"github.com/gofiber/contrib/v3/websocket"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/cors"
+	"github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/gofiber/fiber/v3/middleware/static"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
@@ -66,7 +67,18 @@ func main() {
 		h.LoadConfigFromDB()
 	}()
 
-	app := fiber.New()
+	app := fiber.New(fiber.Config{
+		ErrorHandler: func(c fiber.Ctx, err error) error {
+			code := fiber.StatusInternalServerError
+			if e, ok := err.(*fiber.Error); ok {
+				code = e.Code
+			}
+			return c.Status(code).JSON(fiber.Map{
+				"error": err.Error(),
+			})
+		},
+	})
+	app.Use(recover.New())
 	app.Use(cors.New(cors.Config{
 		AllowOriginsFunc: func(origin string) bool {
 			return true
@@ -107,33 +119,34 @@ func main() {
 	protected.Get("/storage/buckets/:bucket/files/:file", h.DownloadFile)
 	protected.Get("/stats", h.GetStats)
 	protected.Get("/activity", h.GetActivityLogs)
+	protected.Get("/config", h.GetConfig)
+	protected.Post("/config", h.UpdateConfig)
+
+	// SPA Fallback / 404 Handler for API
+	app.Use(func(c fiber.Ctx) error {
+		path := c.Path()
+		if (len(path) >= 5 && path[:5] == "/rest") || path == "/ws" || (len(path) >= 7 && path[:7] == "/assets") {
+			return c.Status(404).JSON(fiber.Map{"error": "Not Found"})
+		}
+		return c.Next()
+	})
 
 	// Serve Frontend
 	dist, _ := fs.Sub(assets, "Interface/dist")
 
-	// Use static middleware for all assets
+	// Use static middleware
 	app.Use("/", static.New("", static.Config{
 		FS:         dist,
 		IndexNames: []string{"index.html"},
 	}))
 
-	// SPA Fallback: for routes that don't match static files and are not API/WS
+	// Final SPA Fallback
 	app.Use(func(c fiber.Ctx) error {
-		path := c.Path()
-
-		// If it's an API route, WebSocket, or static asset, return 404 instead of index.html
-		// This prevents the browser from getting index.html when it expects a JS/CSS file (MIME error)
-		if (len(path) >= 5 && path[:5] == "/rest") || path == "/ws" || (len(path) >= 7 && path[:7] == "/assets") {
-			return c.Status(404).JSON(fiber.Map{"error": "Not Found"})
-		}
-
-		// Serve index.html for browser navigation (SPA routing)
 		index, err := fs.ReadFile(dist, "index.html")
 		if err == nil {
 			c.Set("Content-Type", "text/html; charset=utf-8")
 			return c.Send(index)
 		}
-
 		return c.Next()
 	})
 	port := os.Getenv("PORT")

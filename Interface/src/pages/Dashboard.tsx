@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import AlertModal from '../components/AlertModal';
 import Checkbox from '../components/Checkbox';
 import { useDatabase } from '../contexts/DatabaseContext';
-import { API_BASE } from '../contexts/AuthContext';
+import { API_BASE, safeJson } from '../contexts/AuthContext';
 
 type ColumnDef = {
   id: string;
@@ -88,9 +88,8 @@ export default function Dashboard() {
         const res = await fetch(`${API_BASE}/schema/${table}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
-        const columns: TableColumn[] = await res.json();
+        const columns: TableColumn[] = await safeJson(res);
 
-        code += `  // Create ${table} table\n`;
         code += `  await gb.schema.create("${table}")\n`;
         
         columns.forEach((col, idx) => {
@@ -146,7 +145,7 @@ export default function Dashboard() {
       const res = await fetch(`${API_BASE}/stats`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      const data = await res.json();
+      const data = await safeJson(res);
       setStats(data);
     } catch (err) {
       console.error('Failed to fetch stats', err);
@@ -197,7 +196,7 @@ export default function Dashboard() {
       const res = await fetch(`${API_BASE}/schema/${tableName}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      const data = await res.json();
+      const data = await safeJson(res);
       if (Array.isArray(data)) {
         setRefTableColumns(prev => ({
           ...prev,
@@ -350,9 +349,9 @@ export default function Dashboard() {
               </button>
             </div>
           </div>
-          <div className="glass-card rounded-xl overflow-hidden flex flex-col h-[480px]">
+          <div className="glass-card rounded-xl overflow-hidden flex flex-col h-120">
             <div className="flex-1 flex font-mono text-[13px] leading-relaxed overflow-hidden">
-              <div className="bg-slate-900/50 text-slate-500 text-right py-6 px-4 select-none border-r border-slate-800 flex flex-col shrink-0 min-w-[50px]">
+              <div className="bg-slate-900/50 text-slate-500 text-right py-6 px-4 select-none border-r border-slate-800 flex flex-col shrink-0 min-w-12.5">
                 {generatedCode.split('\n').map((_, i) => (
                   <div key={i} className="h-6 leading-6">{i + 1}</div>
                 ))}
@@ -404,7 +403,7 @@ export default function Dashboard() {
           </div>
 
           {/* Connection Health */}
-          <div className="bg-gradient-to-br from-primary to-accent-purple rounded-xl p-6 text-white shadow-lg shadow-primary/20">
+          <div className="bg-linear-to-br from-primary to-accent-purple rounded-xl p-6 text-white shadow-lg shadow-primary/20">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-lg bg-white/20 backdrop-blur-md flex items-center justify-center">
                 <span className="material-symbols-outlined">bolt</span>
@@ -445,7 +444,7 @@ export default function Dashboard() {
                   onClick={() => setIsCreateTableModalOpen(false)}
                   className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg transition-colors"
                 >
-                  <span className="material-symbols-outlined !text-xl text-slate-500">close</span>
+                  <span className="material-symbols-outlined text-xl! text-slate-500">close</span>
                 </button>
               </div>
 
@@ -468,7 +467,7 @@ export default function Dashboard() {
                       onClick={handleAddColumn}
                       className="text-xs font-bold text-primary hover:bg-primary/10 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1"
                     >
-                      <span className="material-symbols-outlined !text-sm">add</span>
+                      <span className="material-symbols-outlined text-sm!">add</span>
                       Add Column
                     </button>
                   </div>
@@ -538,7 +537,7 @@ export default function Dashboard() {
                             disabled={newTableColumns.length === 1}
                             className="mt-6 p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            <span className="material-symbols-outlined !text-lg">delete</span>
+                            <span className="material-symbols-outlined text-lg!">delete</span>
                           </button>
                         </div>
 
