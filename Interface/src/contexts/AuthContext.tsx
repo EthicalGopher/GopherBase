@@ -6,12 +6,13 @@ const getApiBase = () => {
 
   if (typeof window !== 'undefined') {
     const { hostname, port, protocol } = window.location;
-    // If we're on Vite dev (5173) or preview (4173) port, 
-    // and hitting localhost, default to the backend port 8080.
-    if ((port === '5173' || port === '4173') && hostname === 'localhost') {
-      return `${protocol}//localhost:8080/rest/v1`;
+    // If we're on Vite dev (5173) or preview (4173), 
+    // point to the backend on port 8080 of the SAME host.
+    if (port === '5173' || port === '4173') {
+      return `${protocol}//${hostname}:8080/rest/v1`;
     }
   }
+  // In production (embedded), or if we can't detect, use relative paths.
   return '/rest/v1';
 };
 

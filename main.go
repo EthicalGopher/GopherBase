@@ -19,7 +19,7 @@ import (
 	"github.com/joho/godotenv"
 )
 
-//go:embed all:Interface/dist
+//go:embed Interface/dist/*
 var assets embed.FS
 
 func init() {
@@ -84,7 +84,7 @@ func main() {
 			return true
 		},
 		AllowCredentials: true,
-		AllowHeaders:     []string{"Content-Type", "Authorization"},
+		AllowHeaders:     []string{"Content-Type", "Authorization", "Accept"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 	}))
 
@@ -122,26 +122,24 @@ func main() {
 	protected.Get("/config", h.GetConfig)
 	protected.Post("/config", h.UpdateConfig)
 
-	// SPA Fallback / 404 Handler for API
-	app.Use(func(c fiber.Ctx) error {
-		path := c.Path()
-		if (len(path) >= 5 && path[:5] == "/rest") || path == "/ws" || (len(path) >= 7 && path[:7] == "/assets") {
-			return c.Status(404).JSON(fiber.Map{"error": "Not Found"})
-		}
-		return c.Next()
-	})
-
 	// Serve Frontend
 	dist, _ := fs.Sub(assets, "Interface/dist")
 
-	// Use static middleware
+	// 1. Static files middleware (must come before SPA fallback)
 	app.Use("/", static.New("", static.Config{
 		FS:         dist,
 		IndexNames: []string{"index.html"},
 	}))
 
-	// Final SPA Fallback
+	// 2. SPA Fallback / 404 Handler
 	app.Use(func(c fiber.Ctx) error {
+		path := c.Path()
+		// If it's an API call, return 404
+		if (len(path) >= 5 && path[:5] == "/rest") || path == "/ws" {
+			return c.Status(404).JSON(fiber.Map{"error": "Not Found"})
+		}
+		
+		// For all other routes (like /login, /tables), serve index.html for React Router
 		index, err := fs.ReadFile(dist, "index.html")
 		if err == nil {
 			c.Set("Content-Type", "text/html; charset=utf-8")
@@ -149,6 +147,7 @@ func main() {
 		}
 		return c.Next()
 	})
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
