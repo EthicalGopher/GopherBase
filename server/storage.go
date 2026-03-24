@@ -64,6 +64,9 @@ func (h *Handler) InitStorage() error {
 }
 
 func (h *Handler) ListBuckets(c fiber.Ctx) error {
+	if h.DB == nil {
+		return c.Status(503).JSON(fiber.Map{"error": "Database not ready"})
+	}
 	rows, err := h.DB.Query(c.Context(), "SELECT id, name, is_public, created_at FROM _gopherbase_buckets ORDER BY name")
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
@@ -86,6 +89,9 @@ func (h *Handler) ListBuckets(c fiber.Ctx) error {
 }
 
 func (h *Handler) CreateBucket(c fiber.Ctx) error {
+	if h.DB == nil {
+		return c.Status(503).JSON(fiber.Map{"error": "Database not ready"})
+	}
 	var body struct {
 		Name     string `json:"name"`
 		IsPublic bool   `json:"isPublic"`
@@ -120,6 +126,9 @@ func (h *Handler) CreateBucket(c fiber.Ctx) error {
 }
 
 func (h *Handler) DeleteBucket(c fiber.Ctx) error {
+	if h.DB == nil {
+		return c.Status(503).JSON(fiber.Map{"error": "Database not ready"})
+	}
 	bucketName := c.Params("bucket")
 
 	// Get ID and confirm existence
@@ -144,6 +153,9 @@ func (h *Handler) DeleteBucket(c fiber.Ctx) error {
 }
 
 func (h *Handler) ListFiles(c fiber.Ctx) error {
+	if h.DB == nil {
+		return c.Status(503).JSON(fiber.Map{"error": "Database not ready"})
+	}
 	bucketName := c.Params("bucket")
 
 	query := `
@@ -175,6 +187,9 @@ func (h *Handler) ListFiles(c fiber.Ctx) error {
 }
 
 func (h *Handler) UploadFile(c fiber.Ctx) error {
+	if h.DB == nil {
+		return c.Status(503).JSON(fiber.Map{"error": "Database not ready"})
+	}
 	bucketName := c.Params("bucket")
 
 	file, err := c.FormFile("file")
@@ -227,6 +242,9 @@ func (h *Handler) UploadFile(c fiber.Ctx) error {
 }
 
 func (h *Handler) DeleteFile(c fiber.Ctx) error {
+	if h.DB == nil {
+		return c.Status(503).JSON(fiber.Map{"error": "Database not ready"})
+	}
 	bucketName := c.Params("bucket")
 	fileName := c.Params("file")
 

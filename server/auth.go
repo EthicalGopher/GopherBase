@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,6 +18,17 @@ import (
 
 var AuthConfig AuthSettings
 var configMu sync.RWMutex
+
+func (h *Handler) maybeCreateConfigTable() error {
+	if h.DB == nil {
+		return fmt.Errorf("database not initialized")
+	}
+	_, err := h.DB.Exec(context.Background(), "SELECT 1 FROM _gopherbase_config LIMIT 1")
+	if err != nil && (strings.Contains(err.Error(), "does not exist") || strings.Contains(err.Error(), "42P01")) {
+		return h.CreateConfigTable()
+	}
+	return nil
+}
 
 type AuthSettings struct {
 	JWTSecret          string
@@ -130,6 +142,11 @@ func (h *Handler) LoadConfigFromDB() error {
 	if h.DB == nil {
 		return fmt.Errorf("database not initialized")
 	}
+	
+	if err := h.maybeCreateConfigTable(); err != nil {
+		return err
+	}
+
 	var configJSON string
 	err := h.DB.QueryRow(context.Background(),
 		"SELECT value::text FROM _gopherbase_config WHERE key = 'auth'",
@@ -162,6 +179,10 @@ func (h *Handler) SetJWTSecret(secret string) error {
 	configMu.Lock()
 	AuthConfig.JWTSecret = secret
 	configMu.Unlock()
+
+	if err := h.maybeCreateConfigTable(); err != nil {
+		return err
+	}
 
 	configJSON := fmt.Sprintf(`{"jwt": {"secret": "%s", "algorithm": "HS256"}}`, secret)
 

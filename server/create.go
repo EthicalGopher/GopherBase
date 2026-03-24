@@ -46,6 +46,9 @@ type CreateTableRequest struct {
 }
 
 func (h *Handler) CreateTable(c fiber.Ctx) error {
+	if h.DB == nil {
+		return c.Status(503).JSON(fiber.Map{"error": "Database not ready"})
+	}
 	table := c.Params("table")
 	if table == "" {
 		return c.Status(400).JSON(fiber.Map{
@@ -109,6 +112,9 @@ func (h *Handler) CreateTable(c fiber.Ctx) error {
 }
 
 func (h *Handler) DropTable(c fiber.Ctx) error {
+	if h.DB == nil {
+		return c.Status(503).JSON(fiber.Map{"error": "Database not ready"})
+	}
 	table := c.Params("table")
 	if table == "" {
 		return c.Status(400).JSON(fiber.Map{
@@ -200,6 +206,9 @@ type InsertRequest struct {
 }
 
 func (h *Handler) Insert(c fiber.Ctx) error {
+	if h.DB == nil {
+		return c.Status(503).JSON(fiber.Map{"error": "Database not ready"})
+	}
 	fmt.Println("Hi")
 	table := c.Params("table")
 	fmt.Println(table)

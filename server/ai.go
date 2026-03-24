@@ -630,6 +630,9 @@ func (h *Handler) AIWebSocket(conn *websocket.Conn) {
 }
 
 func (h *Handler) AIQuery(c fiber.Ctx) error {
+	if h.DB == nil {
+		return c.Status(503).JSON(fiber.Map{"error": "Database not ready"})
+	}
 	var body AIQueryRequest
 	if err := c.Bind().Body(&body); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})

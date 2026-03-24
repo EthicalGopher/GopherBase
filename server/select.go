@@ -17,8 +17,8 @@ func (h *Handler) Select(c fiber.Ctx) error {
 	}
 
 	if h.DB == nil {
-		return c.Status(500).JSON(fiber.Map{
-			"error": "Database connection is not initialized",
+		return c.Status(503).JSON(fiber.Map{
+			"error": "Database not ready",
 		})
 	}
 
@@ -104,6 +104,9 @@ type RawQueryRequest struct {
 }
 
 func (h *Handler) RawQuery(c fiber.Ctx) error {
+	if h.DB == nil {
+		return c.Status(503).JSON(fiber.Map{"error": "Database not ready"})
+	}
 	var body RawQueryRequest
 	if err := c.Bind().Body(&body); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})

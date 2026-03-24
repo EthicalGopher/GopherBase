@@ -2,25 +2,21 @@ package main
 
 import (
 	"context"
-	"embed"
 	"fmt"
 	"gopherbase/server"
-	"io/fs"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gofiber/contrib/v3/websocket"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/cors"
 	"github.com/gofiber/fiber/v3/middleware/recover"
-	"github.com/gofiber/fiber/v3/middleware/static"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 )
-
-//go:embed Interface/dist/*
-var assets embed.FS
 
 func init() {
 	godotenv.Load()
@@ -32,9 +28,7 @@ func main() {
 		connStr = "postgres://gopherbase:gopherbase@localhost:5432/gopherbase?sslmode=disable"
 	}
 
-	pool, _ := pgxpool.New(context.Background(), connStr)
-	h := server.NewHandler(pool)
-
+	// Auth initialization
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
 		jwtSecret = "your-default-secret-key-change-in-production"
@@ -43,29 +37,101 @@ func main() {
 	if authTable == "" {
 		authTable = "auth"
 	}
-
 	server.InitAuth(jwtSecret, authTable)
 
-	// Background initialization
-	go func() {
-		for h.DB == nil {
-			log.Printf("Waiting for database connection...")
-			newPool, err := pgxpool.New(context.Background(), connStr)
-			if err == nil {
-				h.DB = newPool
-				break
+	// Database initialization
+	var pool *pgxpool.Pool
+	var err error
+	
+	for {
+		log.Printf("Connecting to database at %s...", connStr)
+		
+		// Parse connection string to get target database name
+		config, parseErr := pgxpool.ParseConfig(connStr)
+		if parseErr == nil {
+			targetDB := config.ConnConfig.Database
+			
+			// Try to connect to target DB first
+			pool, err = pgxpool.New(context.Background(), connStr)
+			if err == nil && pool != nil {
+				err = pool.Ping(context.Background())
+				if err == nil {
+					break // Successfully connected to target DB
+				}
+				
+				// If error is "database does not exist", try to create it
+				if err != nil && (strings.Contains(err.Error(), "does not exist") || strings.Contains(err.Error(), "3D000")) {
+					log.Printf("Database %s does not exist. Attempting to create...", targetDB)
+					
+					// Connect to default 'postgres' database to create the target one
+					adminConfig := config.Copy()
+					adminConfig.ConnConfig.Database = "postgres"
+					
+					adminConn, adminErr := pgx.ConnectConfig(context.Background(), adminConfig.ConnConfig)
+					if adminErr == nil {
+						// Double quote the database name to avoid issues with reserved words or special characters
+						_, createErr := adminConn.Exec(context.Background(), fmt.Sprintf("CREATE DATABASE \"%s\"", targetDB))
+						adminConn.Close(context.Background())
+						
+						if createErr == nil {
+							log.Printf("Database %s created successfully.", targetDB)
+							// Now retry connecting to the new database
+							if pool != nil {
+								pool.Close()
+							}
+							pool = nil // Clear pool for next iteration
+							continue 
+						} else {
+							log.Printf("Failed to create database: %v", createErr)
+							err = createErr // Update err for logging
+						}
+					} else {
+						log.Printf("Failed to connect to admin database: %v", adminErr)
+						err = adminErr // Update err for logging
+					}
+				}
 			}
-			time.Sleep(5 * time.Second)
+		} else {
+			log.Printf("Failed to parse connection string: %v", parseErr)
 		}
+		
+		log.Printf("Database connection failed: %v. Retrying in 5 seconds...", err)
+		if pool != nil {
+			pool.Close()
+		}
+		time.Sleep(5 * time.Second)
+	}
 
-		fmt.Println("Database connected, initializing tables...")
-		h.DB.Exec(context.Background(), "CREATE EXTENSION IF NOT EXISTS \"pgcrypto\";")
-		h.CreateAuthTable()
-		h.CreateConfigTable()
-		h.CreateLogsTable()
-		h.InitStorage()
-		h.LoadConfigFromDB()
-	}()
+	h := server.NewHandler(pool)
+	fmt.Println("Database connected, initializing tables...")
+	
+	ctx := context.Background()
+	_, err = h.DB.Exec(ctx, "CREATE EXTENSION IF NOT EXISTS \"pgcrypto\";")
+	if err != nil {
+		log.Printf("Warning: Failed to create pgcrypto extension: %v", err)
+	}
+	
+	if err := h.CreateConfigTable(); err != nil {
+		log.Printf("Error creating config table: %v", err)
+	}
+
+	if err := h.CreateAuthTable(); err != nil {
+		log.Printf("Error creating auth table: %v", err)
+	}
+	
+	if err := h.CreateLogsTable(); err != nil {
+		log.Printf("Error creating logs table: %v", err)
+	}
+	
+	if err := h.InitStorage(); err != nil {
+		log.Printf("Error initializing storage: %v", err)
+	}
+	
+	if err := h.LoadConfigFromDB(); err != nil {
+		log.Printf("Note: Could not load initial config from DB (may be first run): %v", err)
+	}
+	
+	fmt.Println("Database initialization completed.")
 
 	app := fiber.New(fiber.Config{
 		ErrorHandler: func(c fiber.Ctx, err error) error {
@@ -121,32 +187,6 @@ func main() {
 	protected.Get("/activity", h.GetActivityLogs)
 	protected.Get("/config", h.GetConfig)
 	protected.Post("/config", h.UpdateConfig)
-
-	// Serve Frontend
-	dist, _ := fs.Sub(assets, "Interface/dist")
-
-	// 1. Static files middleware (must come before SPA fallback)
-	app.Use("/", static.New("", static.Config{
-		FS:         dist,
-		IndexNames: []string{"index.html"},
-	}))
-
-	// 2. SPA Fallback / 404 Handler
-	app.Use(func(c fiber.Ctx) error {
-		path := c.Path()
-		// If it's an API call, return 404
-		if (len(path) >= 5 && path[:5] == "/rest") || path == "/ws" {
-			return c.Status(404).JSON(fiber.Map{"error": "Not Found"})
-		}
-		
-		// For all other routes (like /login, /tables), serve index.html for React Router
-		index, err := fs.ReadFile(dist, "index.html")
-		if err == nil {
-			c.Set("Content-Type", "text/html; charset=utf-8")
-			return c.Send(index)
-		}
-		return c.Next()
-	})
 
 	port := os.Getenv("PORT")
 	if port == "" {

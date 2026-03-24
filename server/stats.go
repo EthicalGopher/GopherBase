@@ -9,7 +9,7 @@ import (
 )
 
 type Stats struct {
-	ActiveConnections int     `json:"activeConnections"`
+	UserCount         int     `json:"userCount"`
 	StorageUsageBytes int64   `json:"storageUsageBytes"`
 	TableCount        int     `json:"tableCount"`
 	APIRequests24h    int     `json:"apiRequests24h"`
@@ -49,12 +49,16 @@ func (h *Handler) LogActivity(event, username, tableName string) {
 }
 
 func (h *Handler) GetStats(c fiber.Ctx) error {
+	if h.DB == nil {
+		return c.Status(503).JSON(fiber.Map{"error": "Database not ready"})
+	}
 	var stats Stats
 
-	// Get active connections
-	err := h.DB.QueryRow(c.Context(), "SELECT count(*) FROM pg_stat_activity").Scan(&stats.ActiveConnections)
+	// Get total users
+	err := h.DB.QueryRow(c.Context(), fmt.Sprintf("SELECT count(*) FROM %s", AuthConfig.TableName)).Scan(&stats.UserCount)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		// If table doesn't exist yet, just return 0
+		stats.UserCount = 0
 	}
 
 	// Get database size
@@ -80,6 +84,9 @@ func (h *Handler) GetStats(c fiber.Ctx) error {
 }
 
 func (h *Handler) GetActivityLogs(c fiber.Ctx) error {
+	if h.DB == nil {
+		return c.Status(503).JSON(fiber.Map{"error": "Database not ready"})
+	}
 	query := `
 		SELECT id, event, username, table_name, timestamp
 		FROM _gopherbase_logs

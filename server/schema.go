@@ -7,6 +7,9 @@ import (
 )
 
 func (h *Handler) GetTables(c fiber.Ctx) error {
+	if h.DB == nil {
+		return c.Status(503).JSON(fiber.Map{"error": "Database not ready"})
+	}
 	query := `
 		SELECT table_name 
 		FROM information_schema.tables 
@@ -58,6 +61,9 @@ type TableColumn struct {
 }
 
 func (h *Handler) GetTableSchema(c fiber.Ctx) error {
+	if h.DB == nil {
+		return c.Status(503).JSON(fiber.Map{"error": "Database not ready"})
+	}
 	table := c.Params("table")
 	if table == "" {
 		return c.Status(400).JSON(fiber.Map{
@@ -154,6 +160,9 @@ type AlterTableRequest struct {
 }
 
 func (h *Handler) AlterTable(c fiber.Ctx) error {
+	if h.DB == nil {
+		return c.Status(503).JSON(fiber.Map{"error": "Database not ready"})
+	}
 	table := c.Params("table")
 	if table == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "Table name is required"})

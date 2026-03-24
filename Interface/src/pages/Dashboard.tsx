@@ -19,7 +19,7 @@ type ColumnDef = {
 };
 
 type DashboardStats = {
-  activeConnections: number;
+  userCount: number;
   storageUsageBytes: number;
   tableCount: number;
   apiRequests24h: number;
@@ -277,17 +277,17 @@ export default function Dashboard() {
         {/* Stat Card 1 */}
         <div className="glass-card rounded-xl p-6 relative overflow-hidden group">
           <div className="absolute top-0 right-0 p-4 opacity-10">
-            <span className="material-symbols-outlined text-6xl text-primary">hub</span>
+            <span className="material-symbols-outlined text-6xl text-primary">group</span>
           </div>
-          <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">Active Connections</p>
+          <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">Total Users</p>
           <div className="flex items-end gap-3">
-            <h3 className="text-3xl font-bold dark:text-white">{stats?.activeConnections || 0}</h3>
+            <h3 className="text-3xl font-bold dark:text-white">{stats?.userCount || 0}</h3>
             <span className="text-green-500 text-sm font-bold flex items-center mb-1">
               <span className="material-symbols-outlined text-sm">trending_up</span> Live
             </span>
           </div>
           <div className="mt-4 h-1 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-            <div className="h-full bg-primary w-[10%]"></div>
+            <div className="h-full bg-primary w-full"></div>
           </div>
         </div>
 

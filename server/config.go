@@ -18,6 +18,11 @@ func (h *Handler) GetConfig(c fiber.Ctx) error {
 	if h.DB == nil {
 		return c.Status(503).JSON(fiber.Map{"error": "Database not ready"})
 	}
+
+	if err := h.maybeCreateConfigTable(); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to ensure config table: " + err.Error()})
+	}
+
 	rows, err := h.DB.Query(c.Context(), "SELECT key, value FROM _gopherbase_config")
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
@@ -43,6 +48,11 @@ func (h *Handler) UpdateConfig(c fiber.Ctx) error {
 	if h.DB == nil {
 		return c.Status(503).JSON(fiber.Map{"error": "Database not ready"})
 	}
+
+	if err := h.maybeCreateConfigTable(); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to ensure config table: " + err.Error()})
+	}
+
 	var body ConfigItem
 	if err := c.Bind().Body(&body); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
@@ -73,6 +83,12 @@ func (h *Handler) GetConfigValue(key string) string {
 	if h.DB == nil {
 		return ""
 	}
+
+	if err := h.maybeCreateConfigTable(); err != nil {
+		log.Printf("[Config] Error ensuring config table for %s: %v", key, err)
+		return ""
+	}
+
 	var value []byte
 	err := h.DB.QueryRow(context.Background(), "SELECT value FROM _gopherbase_config WHERE key = $1", key).Scan(&value)
 	if err != nil {

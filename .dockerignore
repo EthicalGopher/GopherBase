@@ -1,0 +1,8 @@
+Interface/
+build/
+.git/
+.gitignore
+docker-compose.yml
+Makefile
+README.md
+LICENSE
