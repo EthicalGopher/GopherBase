@@ -29,6 +29,9 @@ export default function Tables() {
   const [isLoading, setIsLoading] = useState(true);
   const [isAddRowModalOpen, setIsAddRowModalOpen] = useState(false);
   const [newRowData, setNewRowData] = useState<Record<string, any>>({});
+  const [isEditRowModalOpen, setIsEditRowModalOpen] = useState(false);
+  const [editingRow, setEditingRow] = useState<any>(null);
+  const [editRowData, setEditRowData] = useState<Record<string, any>>({});
   
   const [isEditSchemaModalOpen, setIsEditSchemaModalOpen] = useState(false);
   const [editSchemaColumns, setEditSchemaColumns] = useState<any[]>([]);
@@ -131,7 +134,7 @@ export default function Tables() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify(newRowData)
+        body: JSON.stringify({ data: newRowData })
       });
 
       if (!res.ok) {
@@ -143,6 +146,46 @@ export default function Tables() {
       setNewRowData({});
       fetchTableData();
       showAlert('Success', 'Row added successfully', 'success');
+    } catch (err: any) {
+      showAlert('Error', err.message, 'error');
+    }
+  };
+
+  const handleOpenEditRow = (row: any) => {
+    setEditingRow(row);
+    setEditRowData({ ...row });
+    setIsEditRowModalOpen(true);
+  };
+
+  const handleEditRow = async () => {
+    if (!tableName || !editingRow) return;
+    try {
+      const token = localStorage.getItem('gopherbase_access_token');
+      const primaryKeyCol = columns.find(c => c.isPrimary);
+      if (!primaryKeyCol) throw new Error('No primary key found for this table');
+
+      const res = await fetch(`${API_BASE}/update/${tableName}`, {
+        method: 'PUT',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          where: { [primaryKeyCol.name]: editingRow[primaryKeyCol.name] },
+          set: editRowData
+        })
+      });
+
+      if (!res.ok) {
+        const data = await safeJson(res);
+        throw new Error(data.error || 'Failed to update row');
+      }
+
+      setIsEditRowModalOpen(false);
+      setEditingRow(null);
+      setEditRowData({});
+      fetchTableData();
+      showAlert('Success', 'Row updated successfully', 'success');
     } catch (err: any) {
       showAlert('Error', err.message, 'error');
     }
@@ -364,7 +407,10 @@ export default function Tables() {
                   ))}
                   <td className="p-4 text-right">
                     <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md text-slate-500">
+                      <button 
+                        onClick={() => handleOpenEditRow(row)}
+                        className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md text-slate-500"
+                      >
                         <span className="material-symbols-outlined !text-lg">edit</span>
                       </button>
                       <button 
@@ -426,6 +472,58 @@ export default function Tables() {
                   className="px-6 py-2 bg-primary text-white rounded-lg text-sm font-bold shadow-lg shadow-primary/20"
                 >
                   Insert Row
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Edit Row Modal */}
+      <AnimatePresence>
+        {isEditRowModalOpen && (
+          <motion.div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-lg border border-slate-200 dark:border-slate-800"
+            >
+              <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <h3 className="text-lg font-bold">Edit Row</h3>
+                <button onClick={() => setIsEditRowModalOpen(false)}>
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+              </div>
+              <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto custom-scrollbar">
+                {columns.map(col => (
+                  <div key={col.name}>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                      {col.name} <span className="text-[10px] text-slate-400 font-mono">({col.dataType})</span>
+                    </label>
+                    <input 
+                      type="text"
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-primary/50 outline-none"
+                      placeholder={col.isPrimary ? 'Auto-generated' : 'Enter value...'}
+                      value={editRowData[col.name] === null ? '' : (editRowData[col.name] === undefined ? '' : String(editRowData[col.name]))}
+                      onChange={(e) => setEditRowData({ ...editRowData, [col.name]: e.target.value })}
+                      disabled={col.isPrimary}
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="p-6 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-3">
+                <button 
+                  onClick={() => setIsEditRowModalOpen(false)}
+                  className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleEditRow}
+                  className="px-6 py-2 bg-primary text-white rounded-lg text-sm font-bold shadow-lg shadow-primary/20"
+                >
+                  Save Changes
                 </button>
               </div>
             </motion.div>

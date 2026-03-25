@@ -238,14 +238,14 @@ func (h *Handler) Insert(c fiber.Ctx) error {
 
 	i := 0
 	for col, val := range body.Data {
-		columns = append(columns, col)
+		columns = append(columns, fmt.Sprintf("\"%s\"", col))
 		values = append(values, val)
 		placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
 		i++
 	}
 
 	query := fmt.Sprintf(
-		"INSERT INTO %s (%s) VALUES (%s)",
+		"INSERT INTO \"%s\" (%s) VALUES (%s)",
 		table,
 		strings.Join(columns, ", "),
 		strings.Join(placeholders, ", "),

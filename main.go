@@ -42,15 +42,15 @@ func main() {
 	// Database initialization
 	var pool *pgxpool.Pool
 	var err error
-	
+
 	for {
 		log.Printf("Connecting to database at %s...", connStr)
-		
+
 		// Parse connection string to get target database name
 		config, parseErr := pgxpool.ParseConfig(connStr)
 		if parseErr == nil {
 			targetDB := config.ConnConfig.Database
-			
+
 			// Try to connect to target DB first
 			pool, err = pgxpool.New(context.Background(), connStr)
 			if err == nil && pool != nil {
@@ -58,21 +58,21 @@ func main() {
 				if err == nil {
 					break // Successfully connected to target DB
 				}
-				
+
 				// If error is "database does not exist", try to create it
 				if err != nil && (strings.Contains(err.Error(), "does not exist") || strings.Contains(err.Error(), "3D000")) {
 					log.Printf("Database %s does not exist. Attempting to create...", targetDB)
-					
+
 					// Connect to default 'postgres' database to create the target one
 					adminConfig := config.Copy()
 					adminConfig.ConnConfig.Database = "postgres"
-					
+
 					adminConn, adminErr := pgx.ConnectConfig(context.Background(), adminConfig.ConnConfig)
 					if adminErr == nil {
 						// Double quote the database name to avoid issues with reserved words or special characters
 						_, createErr := adminConn.Exec(context.Background(), fmt.Sprintf("CREATE DATABASE \"%s\"", targetDB))
 						adminConn.Close(context.Background())
-						
+
 						if createErr == nil {
 							log.Printf("Database %s created successfully.", targetDB)
 							// Now retry connecting to the new database
@@ -80,7 +80,7 @@ func main() {
 								pool.Close()
 							}
 							pool = nil // Clear pool for next iteration
-							continue 
+							continue
 						} else {
 							log.Printf("Failed to create database: %v", createErr)
 							err = createErr // Update err for logging
@@ -94,7 +94,7 @@ func main() {
 		} else {
 			log.Printf("Failed to parse connection string: %v", parseErr)
 		}
-		
+
 		log.Printf("Database connection failed: %v. Retrying in 5 seconds...", err)
 		if pool != nil {
 			pool.Close()
@@ -104,13 +104,13 @@ func main() {
 
 	h := server.NewHandler(pool)
 	fmt.Println("Database connected, initializing tables...")
-	
+
 	ctx := context.Background()
 	_, err = h.DB.Exec(ctx, "CREATE EXTENSION IF NOT EXISTS \"pgcrypto\";")
 	if err != nil {
 		log.Printf("Warning: Failed to create pgcrypto extension: %v", err)
 	}
-	
+
 	if err := h.CreateConfigTable(); err != nil {
 		log.Printf("Error creating config table: %v", err)
 	}
@@ -118,19 +118,19 @@ func main() {
 	if err := h.CreateAuthTable(); err != nil {
 		log.Printf("Error creating auth table: %v", err)
 	}
-	
+
 	if err := h.CreateLogsTable(); err != nil {
 		log.Printf("Error creating logs table: %v", err)
 	}
-	
+
 	if err := h.InitStorage(); err != nil {
 		log.Printf("Error initializing storage: %v", err)
 	}
-	
+
 	if err := h.LoadConfigFromDB(); err != nil {
 		log.Printf("Note: Could not load initial config from DB (may be first run): %v", err)
 	}
-	
+
 	fmt.Println("Database initialization completed.")
 
 	app := fiber.New(fiber.Config{
@@ -172,6 +172,7 @@ func main() {
 	protected.Get("/schema/tables", h.GetTables)
 	protected.Get("/schema/:table", h.GetTableSchema)
 	protected.Post("/insert/:table", h.Insert)
+	protected.Put("/update/:table", h.UpdateRow)
 	protected.Delete("/delete/:table", h.DeleteRow)
 	protected.Get("/select/:table", h.Select)
 	protected.Post("/query", h.RawQuery)

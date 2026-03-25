@@ -1,13 +1,39 @@
 import { useState } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'motion/react';
 import { useDatabase } from '../contexts/DatabaseContext';
 import { useAuth } from '../contexts/AuthContext';
+import AlertModal from '../components/AlertModal';
 
 export default function Sidebar() {
   const location = useLocation();
+  const navigate = useNavigate();
   const [isTablesOpen, setIsTablesOpen] = useState(true);
-  const { tables } = useDatabase();
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const { tables, dropTable } = useDatabase();
   const { signOut, user } = useAuth();
+
+  const [alertConfig, setAlertConfig] = useState<{ isOpen: boolean; title: string; message: string; type: 'success' | 'error' | 'info' | 'warning' }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'info'
+  });
+
+  const handleDropTable = async (tableName: string) => {
+    setOpenMenu(null);
+    if (!confirm(`Are you sure you want to drop table "${tableName}"? This action cannot be undone.`)) return;
+    
+    try {
+      await dropTable(tableName);
+      if (location.pathname === `/tables/${tableName}`) {
+        navigate('/tables');
+      }
+      setAlertConfig({ isOpen: true, title: 'Success', message: `Table "${tableName}" dropped successfully`, type: 'success' });
+    } catch (err: any) {
+      setAlertConfig({ isOpen: true, title: 'Error', message: err.message, type: 'error' });
+    }
+  };
 
   return (
     <aside className="w-64 border-r border-slate-200 dark:border-slate-800 flex flex-col h-screen sticky top-0 bg-white dark:bg-background-dark">
@@ -46,20 +72,51 @@ export default function Sidebar() {
                 tables
                   .filter(t => t !== 'auth' && t !== '_gopherbase_config' && t != '_gopherbase_logs' && t != `_gopherbase_files` && t!= `_gopherbase_buckets`)
                   .map((table) => (
-                    <NavLink
-                      key={table}
-                      to={`/tables/${table}`}
-                      className={({ isActive }) =>
-                        `flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-xs font-medium ${
-                          isActive
-                            ? 'bg-primary/10 text-primary'
-                            : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-                        }`
-                      }
-                    >
-                      <span className="material-symbols-outlined text-sm">table</span>
-                      <span className="capitalize">{table}</span>
-                    </NavLink>
+                    <div key={table} className="relative group">
+                      <NavLink
+                        to={`/tables/${table}`}
+                        className={({ isActive }) =>
+                          `flex items-center justify-between gap-3 px-3 py-2 rounded-lg transition-all text-xs font-medium ${
+                            isActive
+                              ? 'bg-primary/10 text-primary'
+                              : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                          }`
+                        }
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="material-symbols-outlined text-sm">table</span>
+                          <span className="capitalize">{table}</span>
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setOpenMenu(openMenu === table ? null : table);
+                          }}
+                          className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <span className="material-symbols-outlined text-sm">more_vert</span>
+                        </button>
+                      </NavLink>
+                      <AnimatePresence>
+                        {openMenu === table && (
+                          <motion.div
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            className="absolute right-0 top-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg py-1 z-50 min-w-[120px]"
+                          >
+                            <button
+                              onClick={() => handleDropTable(table)}
+                              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10"
+                            >
+                              <span className="material-symbols-outlined text-sm">delete</span>
+                              Drop Table
+                            </button>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
                   ))
               )}
             </div>
@@ -107,6 +164,13 @@ export default function Sidebar() {
           Sign Out
         </button>
       </div>
+      <AlertModal
+        isOpen={alertConfig.isOpen}
+        onClose={() => setAlertConfig(prev => ({ ...prev, isOpen: false }))}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+      />
     </aside>
   );
 }

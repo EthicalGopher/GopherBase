@@ -33,13 +33,13 @@ func (h *Handler) DeleteRow(c fiber.Ctx) error {
 	i := 1
 
 	for col, val := range body {
-		conditions = append(conditions, fmt.Sprintf("%s = $%d", col, i))
+		conditions = append(conditions, fmt.Sprintf("\"%s\" = $%d", col, i))
 		values = append(values, val)
 		i++
 	}
 
 	query := fmt.Sprintf(
-		"DELETE FROM %s WHERE %s",
+		"DELETE FROM \"%s\" WHERE %s",
 		table,
 		strings.Join(conditions, " AND "),
 	)

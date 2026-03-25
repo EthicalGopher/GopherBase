@@ -2,9 +2,7 @@ version: '3.8'
 
 services:
   backend:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ethicalgopher/gopherbase:latest
     ports:
       - "8080:8080"
     environment:
@@ -12,30 +10,39 @@ services:
       - JWT_SECRET=${JWT_SECRET:-dev-secret}
       - OLLAMA_HOST=http://ollama:11434
     restart: unless-stopped
+    depends_on:
+      - postgres
+      - ollama
     networks:
       - gopherbase-network
 
   frontend:
-    build:
-      context: ./Interface
-      dockerfile: Dockerfile
+    image: ethicalgopher/gopherbase-frontend:latest
     ports:
       - "4173:4173"
     restart: unless-stopped
+    depends_on:
+      - backend
     networks:
       - gopherbase-network
 
   postgres:
     image: postgres:16-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     environment:
       POSTGRES_USER: gopherbase
       POSTGRES_PASSWORD: gopherbase
       POSTGRES_DB: gopherbase
+    restart: unless-stopped
     networks:
       - gopherbase-network
 
   ollama:
     image: ollama/ollama:latest
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
     entrypoint: >
       /bin/bash -c "
       ollama serve &

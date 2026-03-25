@@ -16,3 +16,11 @@ rebuild:
 	sudo docker-compose down --remove-orphans
 	sudo docker rmi $(APP_IMAGE) || true
 	sudo docker-compose up --build -d
+
+publish-backend:
+	docker build -t ethicalgopher/gopherbase:latest .
+	docker push ethicalgopher/gopherbase:latest
+
+publish-frontend:
+	cd Interface && docker build -t ethicalgopher/gopherbase-frontend:latest .
+	cd Interface && docker push ethicalgopher/gopherbase-frontend:latest
