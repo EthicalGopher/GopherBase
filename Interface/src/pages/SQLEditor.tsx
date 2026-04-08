@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { API_BASE, safeJson } from '../contexts/AuthContext';
+import { gb } from '../lib/gopherbase';
 
 export default function SQLEditor() {
   const [query, setQuery] = useState('SELECT * FROM auth;');
@@ -15,23 +15,9 @@ export default function SQLEditor() {
     const start = performance.now();
 
     try {
-      const token = localStorage.getItem('gopherbase_access_token');
-      const res = await fetch(`${API_BASE}/query`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ query })
-      });
-      const data = await safeJson(res);
+      const data = await gb.execute(query);
       const end = performance.now();
       setExecTime(Math.round(end - start));
-
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to execute query');
-      }
-
       setResult(data);
     } catch (err: any) {
       setError(err.message);

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { API_BASE, safeJson } from '../contexts/AuthContext';
+import { gb } from '../lib/gopherbase';
 
 export default function Settings() {
   const [aiProvider, setAiProvider] = useState<'ollama' | 'gemini'>('ollama');
@@ -14,16 +14,10 @@ export default function Settings() {
 
   const fetchConfig = async () => {
     try {
-      const token = localStorage.getItem('gopherbase_access_token');
-      const res = await fetch(`${API_BASE}/config`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.ok) {
-        const data = await safeJson(res);
-        if (data.AI_PROVIDER) setAiProvider(data.AI_PROVIDER.toLowerCase() === 'gemini' ? 'gemini' : 'ollama');
-        if (data.GEMINI_API_KEY) setGeminiKey(data.GEMINI_API_KEY);
-        if (data.OLLAMA_HOST) setOllamaHost(data.OLLAMA_HOST);
-      }
+      const data = await gb.getConfig();
+      if (data.AI_PROVIDER) setAiProvider(data.AI_PROVIDER.toLowerCase() === 'gemini' ? 'gemini' : 'ollama');
+      if (data.GEMINI_API_KEY) setGeminiKey(data.GEMINI_API_KEY);
+      if (data.OLLAMA_HOST) setOllamaHost(data.OLLAMA_HOST);
     } catch (err) {
       console.error("Failed to fetch config:", err);
     }
@@ -33,24 +27,10 @@ export default function Settings() {
     setSavingKey(key);
     setMessage(null);
     try {
-      const token = localStorage.getItem('gopherbase_access_token');
-      const res = await fetch(`${API_BASE}/config`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ key, value })
-      });
-
-      if (res.ok) {
-        setMessage({ type: 'success', text: `Setting ${key} saved successfully!` });
-        // Refresh config after save
-        await fetchConfig();
-      } else {
-        const data = await safeJson(res);
-        throw new Error(data.error || 'Failed to save');
-      }
+      await gb.updateConfig(key, value);
+      setMessage({ type: 'success', text: `Setting ${key} saved successfully!` });
+      // Refresh config after save
+      await fetchConfig();
     } catch (err: any) {
       setMessage({ type: 'error', text: err.message });
     } finally {

@@ -157,14 +157,14 @@ func main() {
 	// API Routes
 	app.Get("/ws", websocket.New(h.AIWebSocket))
 	api1 := app.Group("/rest/v1")
-	api1.Get("/auth/config", server.GetAuthConfig)
-	api1.Post("/auth/config", h.UpdateAuthConfig)
 	api1.Post("/auth/signup", h.SignUp)
 	api1.Post("/auth/signin", h.SignIn)
 	api1.Post("/auth/refresh", h.RefreshToken)
+	api1.Post("/auth/signout", server.SignOut)
 
 	protected := api1.Group("", server.AuthMiddleware)
-	protected.Post("/auth/signout", server.SignOut)
+	protected.Get("/auth/config", server.GetAuthConfig)
+	protected.Post("/auth/config", h.UpdateAuthConfig)
 	protected.Get("/auth/user", h.GetUser)
 	protected.Post("/schema/create/:table", h.CreateTable)
 	protected.Post("/schema/alter/:table", h.AlterTable)

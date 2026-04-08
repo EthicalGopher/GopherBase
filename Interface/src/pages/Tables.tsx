@@ -1,25 +1,11 @@
 import { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import AlertModal from '../components/AlertModal';
 import Checkbox from '../components/Checkbox';
 import { useDatabase } from '../contexts/DatabaseContext';
-import { API_BASE, safeJson } from '../contexts/AuthContext';
-
-interface TableColumn {
-  name: string;
-  dataType: string;
-  isNullable: string;
-  columnDefault: string | null;
-  isPrimary: boolean;
-  isUnique: boolean;
-  references: {
-    table: string;
-    column: string;
-    onDelete: string;
-    onUpdate: string;
-  } | null;
-}
+import { gb } from '../lib/gopherbase';
+import type { TableColumn } from 'gopherbase/schema-builder';
 
 export default function Tables() {
   const { tableName } = useParams<{ tableName: string }>();
@@ -60,11 +46,7 @@ export default function Tables() {
   const fetchTableSchema = async () => {
     setIsLoading(true);
     try {
-      const token = localStorage.getItem('gopherbase_access_token');
-      const res = await fetch(`${API_BASE}/schema/${tableName}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await safeJson(res);
+      const data = await gb.schema.getTableSchema(tableName!);
       if (Array.isArray(data)) {
         setColumns(data);
       } else {
@@ -79,13 +61,7 @@ export default function Tables() {
 
   const fetchTableData = async () => {
     try {
-      const token = localStorage.getItem('gopherbase_access_token');
-      let url = `${API_BASE}/select/${tableName}?limit=100`;
-      
-      const res = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await safeJson(res);
+      const data = await gb.from(tableName!).select().execute();
       if (Array.isArray(data)) {
         setRows(data);
       } else {
@@ -100,23 +76,10 @@ export default function Tables() {
     if (!confirm('Are you sure you want to delete this row?')) return;
 
     try {
-      const token = localStorage.getItem('gopherbase_access_token');
       const primaryKeyCol = columns.find(c => c.isPrimary);
       if (!primaryKeyCol) throw new Error('No primary key found for this table');
 
-      const res = await fetch(`${API_BASE}/delete/${tableName}`, {
-        method: 'DELETE',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ [primaryKeyCol.name]: row[primaryKeyCol.name] })
-      });
-
-      if (!res.ok) {
-        const data = await safeJson(res);
-        throw new Error(data.error || 'Failed to delete row');
-      }
+      await gb.from(tableName!).match({ [primaryKeyCol.name]: row[primaryKeyCol.name] }).delete().execute();
 
       fetchTableData();
       showAlert('Success', 'Row deleted successfully', 'success');
@@ -127,20 +90,7 @@ export default function Tables() {
 
   const handleAddRow = async () => {
     try {
-      const token = localStorage.getItem('gopherbase_access_token');
-      const res = await fetch(`${API_BASE}/insert/${tableName}`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ data: newRowData })
-      });
-
-      if (!res.ok) {
-        const data = await safeJson(res);
-        throw new Error(data.error || 'Failed to add row');
-      }
+      await gb.from(tableName!).insert(newRowData).execute();
 
       setIsAddRowModalOpen(false);
       setNewRowData({});
@@ -160,26 +110,10 @@ export default function Tables() {
   const handleEditRow = async () => {
     if (!tableName || !editingRow) return;
     try {
-      const token = localStorage.getItem('gopherbase_access_token');
       const primaryKeyCol = columns.find(c => c.isPrimary);
       if (!primaryKeyCol) throw new Error('No primary key found for this table');
 
-      const res = await fetch(`${API_BASE}/update/${tableName}`, {
-        method: 'PUT',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          where: { [primaryKeyCol.name]: editingRow[primaryKeyCol.name] },
-          set: editRowData
-        })
-      });
-
-      if (!res.ok) {
-        const data = await safeJson(res);
-        throw new Error(data.error || 'Failed to update row');
-      }
+      await gb.from(tableName).match({ [primaryKeyCol.name]: editingRow[primaryKeyCol.name] }).update(editRowData).execute();
 
       setIsEditRowModalOpen(false);
       setEditingRow(null);
@@ -227,11 +161,7 @@ export default function Tables() {
 
   const fetchRefTableColumns = async (tableName: string) => {
     try {
-      const token = localStorage.getItem('gopherbase_access_token');
-      const res = await fetch(`${API_BASE}/schema/${tableName}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await safeJson(res);
+      const data = await gb.schema.getTableSchema(tableName);
       if (Array.isArray(data)) {
         setRefTableColumns(prev => ({
           ...prev,

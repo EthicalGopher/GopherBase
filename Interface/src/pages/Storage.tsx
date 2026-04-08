@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { API_BASE } from '../contexts/AuthContext';
+import { gb } from '../lib/gopherbase';
 import { motion, AnimatePresence } from 'motion/react';
 import AlertModal from '../components/AlertModal';
 
@@ -54,11 +54,7 @@ export default function Storage() {
 
   const fetchBuckets = async () => {
     try {
-      const token = localStorage.getItem('gopherbase_access_token');
-      const res = await fetch(`${API_BASE}/storage/buckets`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await res.json();
+      const data = await gb.storage.listBuckets();
       if (Array.isArray(data)) {
         setBuckets(data);
         if (data.length > 0 && !selectedBucket) {
@@ -75,11 +71,7 @@ export default function Storage() {
   const fetchFiles = async (bucketName: string) => {
     setLoading(true);
     try {
-      const token = localStorage.getItem('gopherbase_access_token');
-      const res = await fetch(`${API_BASE}/storage/buckets/${bucketName}/files`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await res.json();
+      const data = await gb.storage.from(bucketName).listFiles();
       if (Array.isArray(data)) {
         setFiles(data);
       }
@@ -93,46 +85,26 @@ export default function Storage() {
   const handleCreateBucket = async () => {
     if (!newBucketName.trim()) return;
     try {
-      const token = localStorage.getItem('gopherbase_access_token');
-      const res = await fetch(`${API_BASE}/storage/buckets`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ name: newBucketName, isPublic: false })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setBuckets([...buckets, data]);
-        setSelectedBucket(data);
-        setIsCreateBucketModalOpen(false);
-        setNewBucketName('');
-        showAlert('Success', 'Bucket created successfully', 'success');
-      } else {
-        const err = await res.json();
-        showAlert('Error', err.error || 'Failed to create bucket', 'error');
-      }
-    } catch (err) {
-      showAlert('Error', 'Failed to create bucket', 'error');
+      const data = await gb.storage.createBucket(newBucketName);
+      setBuckets([...buckets, data]);
+      setSelectedBucket(data);
+      setIsCreateBucketModalOpen(false);
+      setNewBucketName('');
+      showAlert('Success', 'Bucket created successfully', 'success');
+    } catch (err: any) {
+      showAlert('Error', err.message || 'Failed to create bucket', 'error');
     }
   };
 
   const handleDeleteBucket = async (name: string) => {
     if (!confirm(`Are you sure you want to delete bucket "${name}" and all its contents?`)) return;
     try {
-      const token = localStorage.getItem('gopherbase_access_token');
-      const res = await fetch(`${API_BASE}/storage/buckets/${name}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.ok) {
-        setBuckets(buckets.filter(b => b.name !== name));
-        if (selectedBucket?.name === name) {
-          setSelectedBucket(null);
-        }
-        showAlert('Success', 'Bucket deleted successfully', 'success');
+      await gb.storage.deleteBucket(name);
+      setBuckets(buckets.filter(b => b.name !== name));
+      if (selectedBucket?.name === name) {
+        setSelectedBucket(null);
       }
+      showAlert('Success', 'Bucket deleted successfully', 'success');
     } catch (err) {
       showAlert('Error', 'Failed to delete bucket', 'error');
     }
@@ -142,40 +114,21 @@ export default function Storage() {
     const file = e.target.files?.[0];
     if (!file || !selectedBucket) return;
 
-    const formData = new FormData();
-    formData.append('file', file);
-
     try {
-      const token = localStorage.getItem('gopherbase_access_token');
-      const res = await fetch(`${API_BASE}/storage/buckets/${selectedBucket.name}/upload`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
-        body: formData
-      });
-      if (res.ok) {
-        fetchFiles(selectedBucket.name);
-        showAlert('Success', 'File uploaded successfully', 'success');
-      } else {
-        const err = await res.json();
-        showAlert('Error', err.error || 'Upload failed', 'error');
-      }
-    } catch (err) {
-      showAlert('Error', 'Upload failed', 'error');
+      await gb.storage.from(selectedBucket.name).upload(file);
+      fetchFiles(selectedBucket.name);
+      showAlert('Success', 'File uploaded successfully', 'success');
+    } catch (err: any) {
+      showAlert('Error', err.message || 'Upload failed', 'error');
     }
   };
 
   const handleDeleteFile = async (fileName: string) => {
     if (!selectedBucket) return;
     try {
-      const token = localStorage.getItem('gopherbase_access_token');
-      const res = await fetch(`${API_BASE}/storage/buckets/${selectedBucket.name}/files/${fileName}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.ok) {
-        setFiles(files.filter(f => f.name !== fileName));
-        showAlert('Success', 'File deleted successfully', 'success');
-      }
+      await gb.storage.from(selectedBucket.name).delete(fileName);
+      setFiles(files.filter(f => f.name !== fileName));
+      showAlert('Success', 'File deleted successfully', 'success');
     } catch (err) {
       showAlert('Error', 'Failed to delete file', 'error');
     }
@@ -183,34 +136,26 @@ export default function Storage() {
 
   const handleDownloadFile = async (fileName: string) => {
     if (!selectedBucket) return;
-    const token = localStorage.getItem('gopherbase_access_token');
-    const url = `${API_BASE}/storage/buckets/${selectedBucket.name}/files/${fileName}`;
     
-    // Create a temporary link to download
-    const res = await fetch(url, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    const blob = await res.blob();
-    const downloadUrl = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = downloadUrl;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    try {
+      const blob = await gb.storage.from(selectedBucket.name).download(fileName);
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch (err) {
+      showAlert('Error', 'Failed to download file', 'error');
+    }
   };
 
   const handleViewFile = async (fileName: string) => {
     if (!selectedBucket) return;
-    const token = localStorage.getItem('gopherbase_access_token');
-    const url = `${API_BASE}/storage/buckets/${selectedBucket.name}/files/${fileName}`;
     
     try {
-      const res = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (!res.ok) throw new Error("Failed to fetch file");
-      const blob = await res.blob();
+      const blob = await gb.storage.from(selectedBucket.name).download(fileName);
       const viewUrl = window.URL.createObjectURL(blob);
       window.open(viewUrl, '_blank');
     } catch (err) {

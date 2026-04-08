@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import AlertModal from '../components/AlertModal';
 import Checkbox from '../components/Checkbox';
 import { useDatabase } from '../contexts/DatabaseContext';
-import { API_BASE, safeJson } from '../contexts/AuthContext';
+import { gb } from '../lib/gopherbase';
+import type { TableColumn } from 'gopherbase/schema-builder';
 
 type ColumnDef = {
   id: string;
@@ -23,21 +24,6 @@ type DashboardStats = {
   storageUsageBytes: number;
   tableCount: number;
   apiRequests24h: number;
-};
-
-type TableColumn = {
-  name: string;
-  dataType: string;
-  isNullable: string;
-  columnDefault: string | null;
-  isPrimary: boolean;
-  isUnique: boolean;
-  references: {
-    table: string;
-    column: string;
-    onDelete: string;
-    onUpdate: string;
-  } | null;
 };
 
 export default function Dashboard() {
@@ -73,7 +59,6 @@ export default function Dashboard() {
   const generateSchemaCode = async () => {
     setIsLoadingCode(true);
     try {
-      const token = localStorage.getItem('gopherbase_access_token');
       let code = `import { createClient } from "gopherbase";\n\nconst gb = createClient("${window.location.origin}", "YOUR_PUBLIC_KEY");\n\nasync function setup() {\n`;
 
       const filteredTables = tables.filter(t => t !== 'auth' && t !== '_gopherbase_config' && t !== '_gopherbase_logs' && t !== '_gopherbase_buckets' && t !== '_gopherbase_files');
@@ -85,10 +70,7 @@ export default function Dashboard() {
       }
 
       for (const table of filteredTables) {
-        const res = await fetch(`${API_BASE}/schema/${table}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        const columns: TableColumn[] = await safeJson(res);
+        const columns = await gb.schema.getTableSchema(table);
 
         code += `  await gb.schema.create("${table}")\n`;
         
@@ -141,11 +123,7 @@ export default function Dashboard() {
 
   const fetchStats = async () => {
     try {
-      const token = localStorage.getItem('gopherbase_access_token');
-      const res = await fetch(`${API_BASE}/stats`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await safeJson(res);
+      const data = await gb.getStats();
       setStats(data);
     } catch (err) {
       console.error('Failed to fetch stats', err);
@@ -192,11 +170,7 @@ export default function Dashboard() {
 
   const fetchRefTableColumns = async (tableName: string) => {
     try {
-      const token = localStorage.getItem('gopherbase_access_token');
-      const res = await fetch(`${API_BASE}/schema/${tableName}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await safeJson(res);
+      const data = await gb.schema.getTableSchema(tableName);
       if (Array.isArray(data)) {
         setRefTableColumns(prev => ({
           ...prev,

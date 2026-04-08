@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { API_BASE } from '../contexts/AuthContext';
+import { gb } from '../lib/gopherbase';
 
 interface TableColumn {
   name: string;
@@ -24,33 +24,21 @@ export default function Auth() {
     setLoading(true);
     setError(null);
     try {
-      const token = localStorage.getItem('gopherbase_access_token');
-      
       // 1. Fetch Schema to get all columns
-      const schemaRes = await fetch(`${API_BASE}/schema/auth`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const schemaData = await schemaRes.json();
-      
-      if (!schemaRes.ok) throw new Error(schemaData.error || 'Failed to fetch schema');
+      const schemaData = await gb.schema.getTableSchema('auth');
       
       // Filter out password columns
-      const filteredCols = (schemaData as TableColumn[]).filter(
+      const filteredCols = (schemaData as any[]).map(col => ({
+        name: col.name,
+        dataType: col.dataType
+      })).filter(
         col => !col.name.toLowerCase().includes('password')
       );
       setColumns(filteredCols);
 
       // 2. Fetch User Data
-      const usersRes = await fetch(`${API_BASE}/select/auth`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const usersData = await usersRes.json();
-      
-      if (usersRes.ok) {
-        setUsers(Array.isArray(usersData) ? usersData : []);
-      } else {
-        setError(usersData.error || 'Failed to fetch users');
-      }
+      const usersData = await gb.from('auth').select().execute();
+      setUsers(Array.isArray(usersData) ? usersData : []);
     } catch (err: any) {
       setError(err.message || 'Failed to load authentication data');
     } finally {

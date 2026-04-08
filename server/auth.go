@@ -14,6 +14,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/bcrypt"
 )
 
 var AuthConfig AuthSettings
@@ -288,9 +289,32 @@ func VerifyToken(tokenString string) (*JWTPayload, error) {
 }
 
 func AuthMiddleware(c fiber.Ctx) error {
+	// 1. Check for API Key first (SDK support)
+	apiKey := c.Get("apikey")
+	if apiKey != "" {
+		// In a real system, we'd check if this key is valid in DB.
+		// For GopherBase, "public" is the default unauthenticated key,
+		// and private keys are JWTs.
+		if apiKey == "public" {
+			// Public key access - we allow it but don't set user_id/email
+			return c.Next()
+		}
+		
+		// If it looks like a JWT, treat it as one
+		if len(apiKey) > 20 && strings.Count(apiKey, ".") == 2 {
+			claims, err := VerifyToken(apiKey)
+			if err == nil {
+				c.Locals("user_id", claims.UserID)
+				c.Locals("email", claims.Email)
+				return c.Next()
+			}
+		}
+	}
+
+	// 2. Fallback to Authorization header
 	authHeader := c.Get("Authorization")
 	if authHeader == "" {
-		// Also check cookies
+		// 3. Also check cookies
 		cookie := c.Cookies("gopherbase_access_token")
 		if cookie != "" {
 			authHeader = "Bearer " + cookie
@@ -298,12 +322,6 @@ func AuthMiddleware(c fiber.Ctx) error {
 	}
 
 	if authHeader == "" || len(authHeader) < 8 || authHeader[:7] != "Bearer " {
-		// For now, let's keep a fallback to admin if no token is provided,
-		// but ideally this should return 401.
-		// Given the user said "the website one is working", maybe they rely on this bypass.
-		// However, "fix all of them" implies making it work properly.
-		// Let's implement real verification but keep it somewhat lenient if needed,
-		// or better, just go full real.
 		return c.Status(401).JSON(fiber.Map{
 			"error": "Unauthorized: Missing or invalid token",
 		})
@@ -323,13 +341,22 @@ func AuthMiddleware(c fiber.Ctx) error {
 }
 
 func HashPassword(password string) string {
-	h := hmac.New(sha256.New, []byte(AuthConfig.JWTSecret))
-	h.Write([]byte(password))
-	return base64.StdEncoding.EncodeToString(h.Sum(nil))
+	bytes, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	return string(bytes)
 }
 
 func VerifyPassword(password, hash string) bool {
-	return HashPassword(password) == hash
+	// Try bcrypt first
+	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
+	if err == nil {
+		return true
+	}
+
+	// Fallback to legacy HMAC-SHA256 for backward compatibility
+	h := hmac.New(sha256.New, []byte(AuthConfig.JWTSecret))
+	h.Write([]byte(password))
+	legacyHash := base64.StdEncoding.EncodeToString(h.Sum(nil))
+	return legacyHash == hash
 }
 
 func setAuthCookies(c fiber.Ctx, token AuthToken) {
@@ -339,7 +366,7 @@ func setAuthCookies(c fiber.Ctx, token AuthToken) {
 		Path:     "/",
 		Expires:  time.Now().Add(AuthConfig.AccessTokenExpiry),
 		Secure:   false,
-		HTTPOnly: false,
+		HTTPOnly: true,
 		SameSite: "Lax",
 	})
 	c.Cookie(&fiber.Cookie{
@@ -348,7 +375,7 @@ func setAuthCookies(c fiber.Ctx, token AuthToken) {
 		Path:     "/",
 		Expires:  time.Now().Add(AuthConfig.RefreshTokenExpiry),
 		Secure:   false,
-		HTTPOnly: false,
+		HTTPOnly: true,
 		SameSite: "Lax",
 	})
 }

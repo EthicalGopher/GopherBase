@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { API_BASE, safeJson } from '../contexts/AuthContext';
+import { gb } from '../lib/gopherbase';
 
 interface Log {
   id: string;
@@ -21,11 +21,7 @@ export default function Logs() {
 
   const fetchLogs = async () => {
     try {
-      const token = localStorage.getItem('gopherbase_access_token');
-      const res = await fetch(`${API_BASE}/activity`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await safeJson(res);
+      const data = await gb.getActivity();
       if (Array.isArray(data)) {
         setLogs(data);
       }
